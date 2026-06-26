@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Skool Prompt Forge — Gemini Engagement Posts</title>
+  <meta name="description" content="Generate punchy, emoji-rich, under-500-character Skool community posts about Google Gemini, built for engagement." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="hero">
+      <div class="hero-badge">✨ Skool × Google Gemini</div>
+      <h1>Skool Prompt Forge</h1>
+      <p class="subtitle">
+        Punchy, emoji-rich engagement posts about Google Gemini — Title Cased and
+        always under <strong>500 characters</strong>. Built to spark replies. 🔥
+      </p>
+    </header>
+
+    <section class="controls" aria-label="Generator controls">
+      <div class="control-row">
+        <label class="field">
+          <span class="field-label">Post Type</span>
+          <select id="category">
+            <option value="any">🎲 Surprise Me (Any Type)</option>
+            <option value="prompt-drop">💡 Prompt Drop</option>
+            <option value="hot-take">🌶️ Hot Take</option>
+            <option value="poll">🗳️ Poll / This-or-That</option>
+            <option value="question">💬 Open Question</option>
+            <option value="tutorial">🧭 Quick Tutorial</option>
+            <option value="challenge">🏆 Challenge</option>
+            <option value="win">🎉 Win Celebration</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Gemini Feature</span>
+          <select id="feature">
+            <option value="any">🌈 Any Feature</option>
+            <option value="gems">🧩 Gems (Custom AIs)</option>
+            <option value="deep-research">🔬 Deep Research</option>
+            <option value="canvas">🎨 Canvas</option>
+            <option value="nano-banana">🍌 Nano Banana (Images)</option>
+            <option value="veo">🎬 Veo (Video)</option>
+            <option value="live">🎙️ Gemini Live (Voice)</option>
+            <option value="workspace">📥 Workspace Integration</option>
+            <option value="general">⚡ Core Prompting</option>
+          </select>
+        </label>
+
+        <label class="field field-emoji">
+          <span class="field-label">Emoji Density</span>
+          <select id="emoji-density">
+            <option value="light">🙂 Light</option>
+            <option value="medium" selected>😎 Medium</option>
+            <option value="heavy">🤩 Heavy</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="button-row">
+        <button id="generate" class="btn btn-primary">⚡ Generate Post</button>
+        <button id="batch" class="btn btn-ghost">📦 Generate 5</button>
+      </div>
+    </section>
+
+    <section id="output" class="output" aria-live="polite"></section>
+
+    <footer class="footer">
+      <p>
+        Tip: rotate post types across the week — polls, hot takes, tutorials and wins —
+        so different members get pulled in. Consistency beats volume. 📈
+      </p>
+    </footer>
+  </div>
+
+  <template id="card-template">
+    <article class="card">
+      <div class="card-head">
+        <span class="card-tag"></span>
+        <span class="card-feature"></span>
+      </div>
+      <h2 class="card-title"></h2>
+      <p class="card-body"></p>
+      <div class="card-foot">
+        <span class="char-count"></span>
+        <div class="card-actions">
+          <button class="btn btn-small btn-copy">📋 Copy</button>
+          <button class="btn btn-small btn-reroll">🔄 Reroll</button>
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <script src="content.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
