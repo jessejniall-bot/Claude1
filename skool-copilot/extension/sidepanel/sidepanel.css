@@ -105,3 +105,25 @@ textarea { resize: vertical; }
 .flags li.good::before { color: var(--good); }
 .flags li.warning::before { color: var(--warning); }
 .flags li.serious::before { color: var(--serious); }
+
+.score-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.score-line .num { font-size: 28px; font-weight: 800; }
+.score-line .num.good { color: var(--good); }
+.score-line .num.warning { color: var(--warning); }
+.score-line .num.critical { color: var(--critical); }
+.score-line .verdict { font-size: 12.5px; color: var(--ink-2); font-weight: 600; }
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  margin-bottom: 8px;
+}
+.check-row input { width: auto; margin: 0; }

@@ -30,8 +30,21 @@
     active: false,
     communityName: null,
     lastSyncAt: null,
-    sentKeys: {}, // post_key -> true, avoids resending within this page session
+    sentKeys: {},        // post_key -> true, avoids resending within this page session
+    sentCommentKeys: {}, // comment_key -> true
   };
+
+  // Keys that mark an object as a *comment* (it references a parent).
+  var PARENT_REF_KEYS = ["postId", "post_id", "parentId", "parent_id", "rootId", "root_id", "parent", "root"];
+
+  function parentRef(obj) {
+    for (var i = 0; i < PARENT_REF_KEYS.length; i++) {
+      var v = obj[PARENT_REF_KEYS[i]];
+      if (typeof v === "string" && v) return v;
+      if (v && typeof v === "object" && typeof v.id === "string") return v.id;
+    }
+    return null;
+  }
 
   /* ------------------------- slug detection ------------------------ */
 
@@ -179,7 +192,8 @@
       var hasTime =
         obj.createdAt !== undefined || obj.created_at !== undefined ||
         meta.createdAt !== undefined;
-      return hasContent && hasCounts && hasTime;
+      // Objects referencing a parent are comments, not posts.
+      return hasContent && hasCounts && hasTime && !parentRef(obj);
     }
 
     function extract(obj) {
@@ -221,6 +235,65 @@
       if (looksLikePost(cur)) {
         var p = extract(cur);
         if (p) found.push(p);
+      }
+      for (var k in cur) {
+        if (Object.prototype.hasOwnProperty.call(cur, k)) stack.push(cur[k]);
+      }
+    }
+    return found;
+  }
+
+  // Walk __NEXT_DATA__ collecting objects that look like member comments:
+  // content + timestamp + a reference to a parent post/comment. Feed pages
+  // expose a few; opening a post exposes the full thread.
+  function collectNextDataComments(root) {
+    var found = [];
+    var seen = new Set();
+
+    function looksLikeComment(obj) {
+      if (!obj || typeof obj !== "object" || Array.isArray(obj)) return false;
+      var meta = obj.metadata && typeof obj.metadata === "object" ? obj.metadata : obj;
+      var hasContent = typeof meta.content === "string" || typeof obj.content === "string";
+      var hasTime = obj.createdAt !== undefined || obj.created_at !== undefined;
+      return hasContent && hasTime && !!parentRef(obj);
+    }
+
+    function extract(obj) {
+      var meta = obj.metadata && typeof obj.metadata === "object" ? obj.metadata : {};
+      var content = meta.content || obj.content || "";
+      if (!String(content).trim()) return null;
+      var id = obj.id || obj.name || hashText(String(content));
+      if (seen.has(id)) return null;
+      seen.add(id);
+      var user = obj.user || obj.author || {};
+      var authorName =
+        user.name ||
+        [user.firstName || user.first_name, user.lastName || user.last_name]
+          .filter(Boolean).join(" ") ||
+        null;
+      return {
+        comment_key: String(id),
+        post_key: parentRef(obj),
+        comment_text: String(content).slice(0, 4000),
+        author: authorName,
+        likes: Number(meta.upvotes ?? obj.upvotes ?? 0) || 0,
+        commented_at: toIso(obj.createdAt || obj.created_at),
+      };
+    }
+
+    var stack = [root];
+    var guard = 0;
+    while (stack.length && guard < 200000) {
+      guard++;
+      var cur = stack.pop();
+      if (!cur || typeof cur !== "object") continue;
+      if (Array.isArray(cur)) {
+        for (var i = 0; i < cur.length; i++) stack.push(cur[i]);
+        continue;
+      }
+      if (looksLikeComment(cur)) {
+        var c = extract(cur);
+        if (c) found.push(c);
       }
       for (var k in cur) {
         if (Object.prototype.hasOwnProperty.call(cur, k)) stack.push(cur[k]);
@@ -282,12 +355,25 @@
     var posts = data ? collectNextDataPosts(data) : [];
     if (!posts.length) posts = collectDomPosts();
     posts = posts.filter(function (p) { return !state.sentKeys[p.post_key]; });
-    if (!posts.length) return;
 
-    var res = await sendMessage({ type: "SCRAPED_POSTS", slug: state.slug, posts: posts });
-    if (res && res.ok) {
-      posts.forEach(function (p) { state.sentKeys[p.post_key] = true; });
-      state.lastSyncAt = Date.now();
+    if (posts.length) {
+      var res = await sendMessage({ type: "SCRAPED_POSTS", slug: state.slug, posts: posts });
+      if (res && res.ok) {
+        posts.forEach(function (p) { state.sentKeys[p.post_key] = true; });
+        state.lastSyncAt = Date.now();
+      }
+    }
+
+    var comments = data ? collectNextDataComments(data) : [];
+    comments = comments.filter(function (c) { return !state.sentCommentKeys[c.comment_key]; });
+    if (comments.length) {
+      var cres = await sendMessage({
+        type: "SCRAPED_COMMENTS", slug: state.slug, comments: comments,
+      });
+      if (cres && cres.ok) {
+        comments.forEach(function (c) { state.sentCommentKeys[c.comment_key] = true; });
+        state.lastSyncAt = Date.now();
+      }
     }
   }
 
@@ -327,7 +413,10 @@
 
   async function evaluatePage() {
     var slug = currentSlug();
-    if (slug !== state.slug) state.sentKeys = {};
+    if (slug !== state.slug) {
+      state.sentKeys = {};
+      state.sentCommentKeys = {};
+    }
     state.slug = slug;
     state.allowed = false;
     state.admin = false;

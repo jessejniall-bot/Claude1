@@ -88,6 +88,17 @@
         <p class="muted">No scraped posts yet. Install the extension, sign in from its side panel,
         then browse your community — the feed syncs automatically once admin access is confirmed.</p>
       </div>
+
+      <div class="card score-card">
+        <div class="score-hero">
+          <div>
+            <div id="score-total" class="score-num">—</div>
+            <div id="score-label" class="score-verdict"></div>
+          </div>
+          <div id="score-components" class="score-parts"></div>
+        </div>
+      </div>
+
       <div id="dash-stats" class="stat-row"></div>
       <div class="grid-2">
         <div class="card">
@@ -111,11 +122,39 @@
       </div>
 
       <div class="card">
+        <h3>Where to improve</h3>
+        <ul id="dash-improvements" class="flags"></ul>
+        <div class="row" style="margin-top:10px">
+          <button id="analyze-go" class="btn" type="button">🔍 AI deep review (reads your comments)</button>
+        </div>
+        <p id="analyze-error" class="error"></p>
+        <div id="analyze-output" class="analysis hidden"></div>
+      </div>
+
+      <div class="card">
         <h3>Draft the next post</h3>
         <p id="gen-overdue" class="muted"></p>
         <label class="field">Optional seed
           <textarea id="gen-seed" rows="3" placeholder="A member comment, a health flag, or a note — or leave empty"></textarea>
         </label>
+        <div class="row gen-options">
+          <label class="inline-field">Length
+            <select id="gen-length">
+              <option value="500" selected>Short (≤500 chars)</option>
+              <option value="900">Medium (≤900 chars)</option>
+            </select>
+          </label>
+          <label class="inline-field">Emojis
+            <select id="gen-emoji">
+              <option value="auto" selected>If helpful</option>
+              <option value="none">None</option>
+            </select>
+          </label>
+          <label class="check" style="margin:0">
+            <input id="gen-unicode" type="checkbox" checked />
+            𝗕𝗼𝗹𝗱 title (Unicode)
+          </label>
+        </div>
         <div class="row">
           <button id="gen-go" class="btn primary" type="button">⚡ Generate draft</button>
         </div>
@@ -123,6 +162,10 @@
         <div id="gen-result" class="hidden">
           <label class="field">Title <input id="gen-title" type="text" /></label>
           <label class="field">Body <textarea id="gen-body" rows="12"></textarea></label>
+          <div class="row">
+            <button id="gen-bold" class="btn small" type="button" title="Unicode-bold the selected text (or the whole field)">𝗕 Bold selection</button>
+            <span id="gen-count" class="meta"></span>
+          </div>
           <div class="row">
             <button id="gen-copy" class="btn" type="button">📋 Copy</button>
             <button id="gen-save" class="btn primary" type="button">💾 Save to drafts</button>
@@ -224,6 +267,7 @@
   <script src="../extension/shared/key-vault.js"></script>
   <script src="../extension/shared/ai-providers.js"></script>
   <script src="../extension/shared/health-engine.js"></script>
+  <script src="../extension/shared/unicode-style.js"></script>
   <script src="../extension/shared/default-pillars.js"></script>
   <script src="charts.js"></script>
   <script src="app.js"></script>

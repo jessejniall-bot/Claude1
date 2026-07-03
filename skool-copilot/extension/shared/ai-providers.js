@@ -167,9 +167,12 @@
 
   /* --------------------- draft prompt assembly --------------------- */
 
-  // Builds the single generation prompt from pillar + voice + optional seed.
+  // Builds the single generation prompt from pillar + voice + health
+  // stats + optional seed. ctx.style: { maxChars, emoji: "auto"|"none" }.
   SC.buildDraftPrompt = function (ctx) {
     var voice = ctx.voice || {};
+    var style = ctx.style || {};
+    var maxChars = style.maxChars || 500;
     var lines = [];
     lines.push(
       "Write one post for the Skool community \"" + (ctx.communityName || "my community") + "\"."
@@ -178,6 +181,11 @@
     lines.push("Content pillar to fill: " + ctx.pillarName + ".");
     if (ctx.pillarDescription) lines.push("Pillar description: " + ctx.pillarDescription);
     if (ctx.reason) lines.push("Why this pillar: " + ctx.reason);
+    if (ctx.healthDigest && ctx.healthDigest.length) {
+      lines.push("");
+      lines.push("Current community health stats (write a post that helps these numbers):");
+      ctx.healthDigest.forEach(function (l) { lines.push("- " + l); });
+    }
     lines.push("");
     if (voice.tone_notes) lines.push("Voice and tone: " + voice.tone_notes);
     if (voice.formatting_rules) lines.push("Formatting rules: " + voice.formatting_rules);
@@ -197,10 +205,65 @@
       });
     }
     lines.push("");
+    lines.push("Length: keep the whole post (title + body) under " + maxChars +
+      " characters. Short, punchy posts get read and replied to.");
+    if (style.emoji === "none") {
+      lines.push("Do not use any emojis.");
+    } else {
+      lines.push("Use a few emojis where they genuinely add energy or clarity — " +
+        "never more than one per line, never decoration for its own sake.");
+    }
     lines.push(
       "Output format: first line is the post title (plain text, no markdown heading), " +
       "then a blank line, then the post body. End with a question or call-to-action " +
       "that invites replies. Keep it ready to copy-paste into Skool."
+    );
+    return lines.join("\n");
+  };
+
+  /* ------------------- community deep-review prompt ----------------- */
+
+  SC.ANALYSIS_SYSTEM_PROMPT =
+    "You are a community growth coach for Skool community owners. You are given " +
+    "computed health stats plus real (scraped) posts and member comments from the " +
+    "owner's own community. Be direct and specific: quote or paraphrase actual " +
+    "comments as evidence, never invent data, and give advice the owner can act " +
+    "on this week.";
+
+  // buildAnalysisPrompt({communityName, digestLines, pillars, samplePosts,
+  //                      sampleComments})
+  SC.buildAnalysisPrompt = function (ctx) {
+    var lines = [];
+    lines.push("Review the health of the Skool community \"" +
+      (ctx.communityName || "my community") + "\".");
+    lines.push("");
+    lines.push("Computed stats:");
+    (ctx.digestLines || []).forEach(function (l) { lines.push("- " + l); });
+    if (ctx.pillars && ctx.pillars.length) {
+      lines.push("");
+      lines.push("Content pillars and targets: " + ctx.pillars.map(function (p) {
+        return p.name + " " + (p.target_ratio || 0) + "%";
+      }).join(", "));
+    }
+    if (ctx.samplePosts && ctx.samplePosts.length) {
+      lines.push("");
+      lines.push("Recent post titles:");
+      ctx.samplePosts.forEach(function (t) { lines.push("- " + t); });
+    }
+    if (ctx.sampleComments && ctx.sampleComments.length) {
+      lines.push("");
+      lines.push("Recent member comments (author: text):");
+      ctx.sampleComments.forEach(function (c) { lines.push("- " + c); });
+    }
+    lines.push("");
+    lines.push(
+      "Respond with:\n" +
+      "1. VERDICT — one or two sentences: is this community healthy, and the single " +
+      "biggest reason why or why not.\n" +
+      "2. WHAT'S WORKING — 2-3 bullet points grounded in the comments/stats above.\n" +
+      "3. WHERE TO IMPROVE — 3-5 numbered, concrete actions for this week, each tied " +
+      "to a specific stat or quoted comment.\n" +
+      "Keep the whole response under 350 words. Plain text, no markdown headers."
     );
     return lines.join("\n");
   };

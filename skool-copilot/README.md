@@ -25,7 +25,9 @@ in browser storage — they are never sent to the backend.
 
 1. **Backend** — create a free [Supabase](https://supabase.com) project, open
    its SQL editor, and run `supabase/schema.sql` once. Grab the project URL and
-   anon key from *Settings → API*.
+   anon key from *Settings → API*. (If you set up a project before comment
+   scraping was added, run `supabase/upgrade-001-comments.sql` once instead of
+   re-running the full schema.)
 2. **PWA** — serve this folder statically and open `pwa/`:
    ```bash
    cd skool-copilot
@@ -76,14 +78,43 @@ saving.
 
 ## Community Health Engine (pure calculation, zero AI cost)
 
+- **Overall health score (0–100)** — a weighted verdict (Thriving / Healthy /
+  Needs attention / At risk) built from five components: posting cadence,
+  engagement trend, pillar balance, responsiveness, and participation
 - **Engagement rate over time** — weekly avg likes+comments per post + trend
 - **Posting cadence** — average days between posts, days since last post
 - **Pillar balance** — actual % per pillar over trailing 30 days vs target
+- **Participation** — comments per post, unique commenters, and whether the
+  conversation is carried by the same few people (the extension scrapes
+  comments as well as posts)
 - **Dormant member flagging** — previously active posters gone quiet
 - **Response latency** — question → first reply time, plus unanswered questions
+- **Where to improve** — concrete, numbers-grounded suggestions computed from
+  all of the above
 
 All of it lives in `extension/shared/health-engine.js` as pure functions over
 scraped rows, so the PWA, side panel, and tests share one implementation.
+
+### AI deep review
+
+The dashboard's **AI deep review** button sends the stats digest plus a sample
+of real scraped comments and post titles to your chosen provider and returns a
+verdict (is this community healthy, and why), what's working, and 3–5 concrete
+improvements tied to specific stats or quoted comments. Like drafting, this is
+one BYOK call from your browser — nothing goes through a middleman.
+
+## Post generator
+
+Drafts are grounded in the scraped stats: every generation prompt includes the
+health digest (score, trend, overdue pillar, unanswered questions) plus your
+voice profile and recent post titles. Options:
+
+- **Length** — short (≤500 chars, default) or medium (≤900); Skool posts that
+  get read are short
+- **Emojis** — "if helpful" (a few, never decorative) or none
+- **Unicode styling** — Skool has no rich text, so the generator can render
+  the title in Unicode bold (𝗹𝗶𝗸𝗲 𝘁𝗵𝗶𝘀), and a 𝗕 button bolds any selected
+  text in the draft editors (`extension/shared/unicode-style.js`)
 
 ## Default pillar library (seeded per community, fully editable)
 

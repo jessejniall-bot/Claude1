@@ -14,6 +14,7 @@
   var current = null; // selected community row
   var pillars = [];
   var posts = [];
+  var comments = [];
 
   /* ----------------------------- boot ------------------------------ */
 
@@ -67,9 +68,12 @@
       client.from("pillars").select("*").eq("community_id", id).order("position"),
       client.from("scraped_posts").select("*").eq("community_id", id)
         .order("posted_at", { ascending: false }).limit(500),
+      client.from("scraped_comments").select("*").eq("community_id", id)
+        .order("commented_at", { ascending: false }).limit(1000),
     ]);
     pillars = results[0] || [];
     posts = results[1] || [];
+    comments = results[2] || [];
     renderHealth();
   }
 
@@ -80,7 +84,13 @@
     var trend = SC.health.engagementTrend(posts);
     var balance = SC.health.pillarBalance(posts, pillars);
     var overdue = SC.health.mostOverduePillar(balance);
-    var latency = SC.health.responseLatency(posts);
+    var cstats = SC.health.commentStats(comments, posts);
+
+    var score = SC.health.score(posts, comments, pillars);
+    $("sp-score").innerHTML = posts.length
+      ? '<span class="num ' + score.level + '">' + score.total + '</span>' +
+        '<span class="verdict">/ 100 · ' + score.label + "</span>"
+      : '<span class="verdict">Waiting for scraped data…</span>';
 
     var stats = [
       {
@@ -99,8 +109,8 @@
             (trend.trendPct >= 0 ? "▲ " : "▼ ") + Math.abs(trend.trendPct) + "%</span>",
       },
       {
-        l: "Unanswered questions",
-        v: String(latency.unansweredQuestions),
+        l: "Comments / post (30d)",
+        v: cstats.commentsPerPost == null ? "—" : String(cstats.commentsPerPost),
       },
     ];
     $("sp-stats").innerHTML = stats
@@ -163,9 +173,11 @@
         reason: overdue.deficit > 0
           ? "This pillar is " + overdue.deficit + " points under its target share of recent posts."
           : "",
+        healthDigest: SC.health.digest(posts, comments, pillars),
         voice: voice,
         seed: $("sp-seed").value.trim(),
         recentTitles: recentTitles,
+        style: { maxChars: 500, emoji: "auto" },
       });
 
       var text = await SC.generateDraft({
@@ -178,6 +190,9 @@
 
       var parts = text.split(/\n\s*\n/);
       var title = (parts.shift() || "").replace(/^#+\s*/, "").trim();
+      if ($("sp-unicode").checked && !SC.uni.isStyled(title)) {
+        title = SC.uni.style(title, "bold");
+      }
       $("sp-draft-title").value = title;
       $("sp-draft-body").value = parts.join("\n\n").trim();
       $("sp-draft").classList.remove("hidden");

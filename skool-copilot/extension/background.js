@@ -112,6 +112,34 @@ async function handleScrapedPosts(msg) {
   return { ok: true, saved: rows.length };
 }
 
+async function handleScrapedComments(msg) {
+  var client = await SC.getClient();
+  if (!client) return { ok: false, error: "Backend not configured" };
+  var communities = await getCommunities();
+  var community = findCommunity(communities, msg.slug);
+  if (!community) return { ok: false, error: "Community not allowlisted" };
+
+  var rows = (msg.comments || [])
+    .filter(function (c) { return c && c.comment_key; })
+    .map(function (c) {
+      return {
+        community_id: community.id,
+        comment_key: String(c.comment_key),
+        post_key: c.post_key || null,
+        comment_text: (c.comment_text || "").slice(0, 4000),
+        author: c.author || null,
+        likes: Number(c.likes) || 0,
+        commented_at: c.commented_at || null,
+      };
+    });
+  if (!rows.length) return { ok: true, saved: 0 };
+
+  await client
+    .from("scraped_comments")
+    .upsert(rows, { onConflict: "community_id,comment_key" });
+  return { ok: true, saved: rows.length };
+}
+
 async function handleSaveIdea(msg) {
   var client = await SC.getClient();
   if (!client) return { ok: false, error: "Backend not configured" };
@@ -130,6 +158,7 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
   var handler = null;
   if (msg && msg.type === "GET_COMMUNITY_STATE") handler = handleGetCommunityState;
   else if (msg && msg.type === "SCRAPED_POSTS") handler = handleScrapedPosts;
+  else if (msg && msg.type === "SCRAPED_COMMENTS") handler = handleScrapedComments;
   else if (msg && msg.type === "SAVE_IDEA") handler = handleSaveIdea;
   else if (msg && msg.type === "REFRESH_COMMUNITIES") {
     refreshCommunities()

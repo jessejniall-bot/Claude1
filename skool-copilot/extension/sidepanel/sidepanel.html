@@ -33,6 +33,7 @@
 
     <section class="card" id="sp-health">
       <h2>Health</h2>
+      <div id="sp-score" class="score-line"></div>
       <div id="sp-stats" class="stats"></div>
       <ul id="sp-flags" class="flags"></ul>
     </section>
@@ -43,6 +44,10 @@
       <label class="field">
         Optional seed (comment, flag, or note)
         <textarea id="sp-seed" rows="3" placeholder="Leave empty to just fill the overdue pillar"></textarea>
+      </label>
+      <label class="check-row">
+        <input id="sp-unicode" type="checkbox" checked />
+        𝗕𝗼𝗹𝗱 title (Unicode)
       </label>
       <button id="sp-generate" class="btn primary" type="button">⚡ Generate draft</button>
       <p id="sp-gen-error" class="error"></p>
@@ -63,6 +68,7 @@
   <script src="../shared/key-vault.js"></script>
   <script src="../shared/ai-providers.js"></script>
   <script src="../shared/health-engine.js"></script>
+  <script src="../shared/unicode-style.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>

@@ -1,5 +1,5 @@
 /* Skool Community Copilot — PWA service worker (app-shell cache) */
-var CACHE = "sc-shell-v1";
+var CACHE = "sc-shell-v2";
 var SHELL = [
   "./index.html",
   "./styles.css",
@@ -12,6 +12,7 @@ var SHELL = [
   "../extension/shared/key-vault.js",
   "../extension/shared/ai-providers.js",
   "../extension/shared/health-engine.js",
+  "../extension/shared/unicode-style.js",
   "../extension/shared/default-pillars.js",
 ];
 

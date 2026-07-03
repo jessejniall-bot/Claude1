@@ -261,4 +261,242 @@
     }
     return flags;
   };
+
+  /* ------------------------ comment insights ------------------------ */
+  // Participation math over scraped_comments rows:
+  //   { comment_text, author, likes, commented_at }
+  SC.health.commentStats = function (comments, posts, opts) {
+    var windowDays = (opts && opts.windowDays) || 30;
+    var now = (opts && opts.now) || Date.now();
+    var cutoff = now - windowDays * DAY_MS;
+
+    var recent = (comments || []).filter(function (c) {
+      var t = ts(c.commented_at);
+      return t !== null && t >= cutoff;
+    });
+    var postsRecent = datedPosts(posts).filter(function (x) { return x.t >= cutoff; }).length;
+
+    var byAuthor = {};
+    var totalLen = 0;
+    recent.forEach(function (c) {
+      totalLen += (c.comment_text || "").length;
+      var a = c.author || "(unknown)";
+      byAuthor[a] = (byAuthor[a] || 0) + 1;
+    });
+    var authors = Object.keys(byAuthor).map(function (a) {
+      return { author: a, comments: byAuthor[a] };
+    }).sort(function (a, b) { return b.comments - a.comments; });
+
+    var top3 = authors.slice(0, 3).reduce(function (s, a) { return s + a.comments; }, 0);
+    return {
+      windowDays: windowDays,
+      totalComments: recent.length,
+      totalAllTime: (comments || []).length,
+      postsInWindow: postsRecent,
+      commentsPerPost: postsRecent ? +(recent.length / postsRecent).toFixed(1) : null,
+      uniqueCommenters: authors.length,
+      top3SharePct: recent.length ? +((top3 / recent.length) * 100).toFixed(0) : null,
+      avgCommentChars: recent.length ? Math.round(totalLen / recent.length) : null,
+      topCommenters: authors.slice(0, 5),
+    };
+  };
+
+  /* ------------------- overall community health -------------------- */
+  // A 0-100 verdict built from five weighted components. Neutral scores
+  // are used where there isn't enough data yet, so a fresh community
+  // isn't branded "at risk" before anything has been scraped.
+  SC.health.score = function (posts, comments, pillars, opts) {
+    var clamp = function (v) { return Math.max(0, Math.min(100, v)); };
+    var cad = SC.health.cadence(posts, opts);
+    var trend = SC.health.engagementTrend(posts, opts);
+    var balance = SC.health.pillarBalance(posts, pillars, opts);
+    var latency = SC.health.responseLatency(posts, opts);
+    var cstats = SC.health.commentStats(comments, posts, opts);
+
+    // Cadence: ~3 posts/week is full marks; going silent bleeds points.
+    var cadence;
+    if (cad.postsLast30 === 0) cadence = 0;
+    else {
+      cadence = clamp((cad.postsLast30 / 12) * 100);
+      if (cad.lastPostDaysAgo !== null && cad.lastPostDaysAgo > 7) cadence *= 0.6;
+    }
+
+    // Engagement direction: flat = 60, +20% = 100, -30% = 0.
+    var engagement = trend.trendPct === null ? 60 : clamp(60 + trend.trendPct * 2);
+
+    // Pillar balance: each point of unmet target costs 2.
+    var bal;
+    if (balance.totalClassified < 5) bal = 60;
+    else {
+      var missed = balance.rows.reduce(function (s, r) {
+        return s + Math.max(r.deficit, 0);
+      }, 0);
+      bal = clamp(100 - missed * 2);
+    }
+
+    // Responsiveness to questions.
+    var resp = 100 - latency.unansweredQuestions * 15;
+    if (latency.avgFirstReplyHours !== null) {
+      if (latency.avgFirstReplyHours > 24) resp -= 30;
+      else if (latency.avgFirstReplyHours > 6) resp -= 10;
+    }
+    resp = clamp(resp);
+
+    // Participation: 3+ comments per post is full marks; a conversation
+    // carried by the same 3 people gets docked.
+    var part;
+    if (cstats.totalAllTime === 0) part = 50;
+    else {
+      part = cstats.commentsPerPost === null ? 50 : clamp((cstats.commentsPerPost / 3) * 100);
+      if (cstats.top3SharePct !== null && cstats.top3SharePct > 70 && cstats.uniqueCommenters > 3) {
+        part = clamp(part - 20);
+      }
+    }
+
+    var components = [
+      { key: "cadence", label: "Posting cadence", score: Math.round(cadence), weight: 0.25 },
+      { key: "engagement", label: "Engagement trend", score: Math.round(engagement), weight: 0.2 },
+      { key: "balance", label: "Pillar balance", score: Math.round(bal), weight: 0.2 },
+      { key: "responsiveness", label: "Responsiveness", score: Math.round(resp), weight: 0.15 },
+      { key: "participation", label: "Participation", score: Math.round(part), weight: 0.2 },
+    ];
+    var total = Math.round(components.reduce(function (s, c) {
+      return s + c.score * c.weight;
+    }, 0));
+    var label =
+      total >= 80 ? "Thriving" :
+      total >= 60 ? "Healthy" :
+      total >= 40 ? "Needs attention" : "At risk";
+    var level =
+      total >= 80 ? "good" :
+      total >= 60 ? "good" :
+      total >= 40 ? "warning" : "critical";
+    return { total: total, label: label, level: level, components: components };
+  };
+
+  /* -------------------- improvement suggestions -------------------- */
+  // Concrete, numbers-grounded suggestions. Free (no AI call); the AI
+  // deep review builds on top of these plus the raw comments.
+  SC.health.improvements = function (posts, comments, pillars, opts) {
+    var out = [];
+    var cad = SC.health.cadence(posts, opts);
+    var trend = SC.health.engagementTrend(posts, opts);
+    var balance = SC.health.pillarBalance(posts, pillars, opts);
+    var overdue = SC.health.mostOverduePillar(balance);
+    var latency = SC.health.responseLatency(posts, opts);
+    var cstats = SC.health.commentStats(comments, posts, opts);
+    var dormant = SC.health.dormantMembers(posts, opts);
+
+    if (cad.postsLast30 < 8) {
+      out.push({
+        area: "Cadence",
+        level: cad.postsLast30 < 4 ? "serious" : "warning",
+        text: "Only " + cad.postsLast30 + " post(s) in the last 30 days. Communities " +
+          "compound on rhythm — aim for 2-3 posts a week; use the queue to batch them.",
+      });
+    }
+    if (trend.trendPct !== null && trend.trendPct < -10) {
+      out.push({
+        area: "Engagement",
+        level: "serious",
+        text: "Engagement per post is trending down " + Math.abs(trend.trendPct) +
+          "%. Lead with questions and stories for a week and watch whether replies recover.",
+      });
+    }
+    if (overdue && overdue.deficit > 5 && balance.totalClassified >= 5) {
+      out.push({
+        area: "Content mix",
+        level: "warning",
+        text: "\"" + overdue.name + "\" is " + overdue.deficit + " points under its " +
+          overdue.targetPct + "% target — the generator below will fill it first.",
+      });
+    }
+    if (latency.unansweredQuestions > 0) {
+      out.push({
+        area: "Responsiveness",
+        level: "warning",
+        text: latency.unansweredQuestions + " member question(s) have waited 24h+ with no " +
+          "reply. Answering those is the cheapest engagement win available today.",
+      });
+    }
+    if (latency.avgFirstReplyHours !== null && latency.avgFirstReplyHours > 12) {
+      out.push({
+        area: "Responsiveness",
+        level: "warning",
+        text: "Questions wait " + latency.avgFirstReplyHours + "h on average for a first " +
+          "reply. Faster first replies train members that posting here gets a response.",
+      });
+    }
+    if (cstats.commentsPerPost !== null && cstats.commentsPerPost < 2 && cstats.postsInWindow >= 4) {
+      out.push({
+        area: "Participation",
+        level: "warning",
+        text: "Posts average only " + cstats.commentsPerPost + " comment(s). End every post " +
+          "with one specific, easy-to-answer question instead of a generic \"thoughts?\".",
+      });
+    }
+    if (cstats.top3SharePct !== null && cstats.top3SharePct > 70 && cstats.uniqueCommenters > 3) {
+      out.push({
+        area: "Participation",
+        level: "warning",
+        text: "Your top 3 commenters produce " + cstats.top3SharePct + "% of all comments. " +
+          "Name-drop quieter members in posts and reply to first-time commenters within hours.",
+      });
+    }
+    if (dormant.length > 0) {
+      out.push({
+        area: "Retention",
+        level: "good",
+        text: dormant.length + " previously active member(s) have gone quiet (e.g. " +
+          dormant.slice(0, 3).map(function (m) { return m.author; }).join(", ") +
+          "). A shoutout or check-in post can pull them back before they churn.",
+      });
+    }
+    if (!out.length) {
+      out.push({
+        area: "Overall",
+        level: "good",
+        text: "No obvious weak spots in the data. Keep the cadence and keep answering fast.",
+      });
+    }
+    return out;
+  };
+
+  /* ------------------------- stats digest --------------------------- */
+  // Compact text summary of everything above — injected into generation
+  // prompts so drafts are grounded in the scraped stats, and into the
+  // AI deep-review prompt.
+  SC.health.digest = function (posts, comments, pillars, opts) {
+    var cad = SC.health.cadence(posts, opts);
+    var trend = SC.health.engagementTrend(posts, opts);
+    var balance = SC.health.pillarBalance(posts, pillars, opts);
+    var overdue = SC.health.mostOverduePillar(balance);
+    var latency = SC.health.responseLatency(posts, opts);
+    var cstats = SC.health.commentStats(comments, posts, opts);
+    var score = SC.health.score(posts, comments, pillars, opts);
+
+    var lines = [];
+    lines.push("Health score: " + score.total + "/100 (" + score.label + ")");
+    lines.push("Posts in last 30 days: " + cad.postsLast30 +
+      (cad.avgGapDays !== null ? " (avg " + cad.avgGapDays + " days between posts)" : ""));
+    if (trend.trendPct !== null) {
+      lines.push("Engagement per post trend: " + (trend.trendPct >= 0 ? "+" : "") + trend.trendPct + "%");
+    }
+    if (overdue && balance.totalClassified >= 5) {
+      lines.push("Most underfed pillar: " + overdue.name + " (" + overdue.actualPct +
+        "% actual vs " + overdue.targetPct + "% target)");
+    }
+    if (cstats.commentsPerPost !== null) {
+      lines.push("Comments per post: " + cstats.commentsPerPost + " from " +
+        cstats.uniqueCommenters + " unique commenters" +
+        (cstats.top3SharePct !== null ? " (top 3 write " + cstats.top3SharePct + "%)" : ""));
+    }
+    if (latency.unansweredQuestions > 0) {
+      lines.push("Unanswered member questions older than 24h: " + latency.unansweredQuestions);
+    }
+    if (latency.avgFirstReplyHours !== null) {
+      lines.push("Average time to first reply on questions: " + latency.avgFirstReplyHours + "h");
+    }
+    return lines;
+  };
 })(typeof globalThis !== "undefined" ? (globalThis.SC = globalThis.SC || {}) : {});

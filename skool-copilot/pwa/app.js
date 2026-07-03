@@ -19,6 +19,7 @@
     pillars: [],
     voice: null,
     posts: [],
+    comments: [],
     ideas: [],
     drafts: [],
     queue: [],
@@ -100,6 +101,8 @@
         .order("updated_at", { ascending: false }).limit(100),
       c.from("queue").select("*").eq("community_id", id)
         .order("scheduled_for").limit(100),
+      c.from("scraped_comments").select("*").eq("community_id", id)
+        .order("commented_at", { ascending: false }).limit(2000),
     ]);
     state.pillars = results[0] || [];
     state.voice = (results[1] && results[1][0]) || null;
@@ -107,6 +110,7 @@
     state.ideas = results[3] || [];
     state.drafts = results[4] || [];
     state.queue = results[5] || [];
+    state.comments = results[6] || [];
   }
 
   function currentCommunity() {
@@ -132,6 +136,29 @@
     var balance = SC.health.pillarBalance(posts, state.pillars);
     var overdue = SC.health.mostOverduePillar(balance);
 
+    // Overall health verdict
+    var score = SC.health.score(posts, state.comments, state.pillars);
+    var scoreEl = $("score-total");
+    scoreEl.textContent = posts.length ? String(score.total) : "—";
+    scoreEl.className = "score-num " + score.level;
+    $("score-label").textContent = posts.length
+      ? score.label + " · community health score"
+      : "Waiting for data";
+    $("score-components").innerHTML = score.components.map(function (c) {
+      return '<div class="score-part"><span class="n">' + c.label + "</span>" +
+        '<span class="track"><span class="fill" style="width:' + c.score + '%"></span></span>' +
+        '<span class="v">' + c.score + "</span></div>";
+    }).join("");
+
+    // Where to improve (computed, free)
+    var improvements = SC.health.improvements(posts, state.comments, state.pillars);
+    $("dash-improvements").innerHTML = improvements.map(function (s) {
+      return '<li class="' + s.level + '"><strong>' + escapeHtml(s.area) + ":</strong> " +
+        escapeHtml(s.text) + "</li>";
+    }).join("");
+
+    var cstats = SC.health.commentStats(state.comments, posts);
+
     var tiles = [
       { l: "Posts in last 30 days", v: String(cad.postsLast30) },
       { l: "Avg days between posts", v: cad.avgGapDays == null ? "—" : String(cad.avgGapDays) },
@@ -140,6 +167,10 @@
         v: trend.trendPct == null ? "—"
           : '<span class="' + (trend.trendPct >= 0 ? "up" : "down") + '">' +
             (trend.trendPct >= 0 ? "▲ " : "▼ ") + Math.abs(trend.trendPct) + "%</span>",
+      },
+      {
+        l: "Comments per post (30d)",
+        v: cstats.commentsPerPost == null ? "—" : String(cstats.commentsPerPost),
       },
       {
         l: "Avg first reply (questions)",
@@ -216,15 +247,25 @@
           reason: overdue.deficit > 0
             ? "This pillar is " + overdue.deficit + " points under its target share of recent posts."
             : "",
+          healthDigest: SC.health.digest(state.posts, state.comments, state.pillars),
           voice: state.voice || {},
           seed: $("gen-seed").value.trim(),
           recentTitles: recentTitles,
+          style: {
+            maxChars: Number($("gen-length").value) || 500,
+            emoji: $("gen-emoji").value,
+          },
         }),
       });
 
       var parts = text.split(/\n\s*\n/);
-      $("gen-title").value = (parts.shift() || "").replace(/^#+\s*/, "").trim();
+      var title = (parts.shift() || "").replace(/^#+\s*/, "").trim();
+      if ($("gen-unicode").checked && !SC.uni.isStyled(title)) {
+        title = SC.uni.style(title, "bold");
+      }
+      $("gen-title").value = title;
       $("gen-body").value = parts.join("\n\n").trim();
+      updateGenCount();
       $("gen-result").classList.remove("hidden");
       $("gen-result").dataset.pillar = overdue.slug;
       $("gen-result").dataset.provider = settings.provider;
@@ -235,6 +276,61 @@
     } finally {
       btn.disabled = false;
       btn.textContent = "⚡ Generate draft";
+    }
+  }
+
+  function updateGenCount() {
+    var total = $("gen-title").value.length + $("gen-body").value.length;
+    $("gen-count").textContent = total + " chars";
+  }
+
+  /* ------------------------ AI deep review ------------------------- */
+
+  async function analyzeCommunity() {
+    $("analyze-error").textContent = "";
+    var btn = $("analyze-go");
+    var out = $("analyze-output");
+    btn.disabled = true;
+    try {
+      var settings = (await SC.storage.get(AI_SETTINGS_KEY)) || {};
+      if (!settings.provider) throw new Error("Configure an AI provider in Settings first.");
+      var apiKey = await SC.vault.loadApiKey(settings.provider);
+      if (!apiKey) throw new Error("No API key stored for " + settings.provider + ". Add it in Settings.");
+
+      out.classList.remove("hidden");
+      out.classList.add("loading");
+      out.textContent = "Reading your stats and comments…";
+
+      var community = currentCommunity();
+      var sampleComments = state.comments.slice(0, 40).map(function (c) {
+        return (c.author || "member") + ": " +
+          (c.comment_text || "").replace(/\s+/g, " ").slice(0, 200);
+      });
+      var samplePosts = state.posts.slice(0, 10).map(function (p) {
+        return (p.post_text || "").split("\n")[0].slice(0, 90);
+      });
+
+      var text = await SC.generateDraft({
+        provider: settings.provider,
+        apiKey: apiKey,
+        model: settings.model,
+        system: SC.ANALYSIS_SYSTEM_PROMPT,
+        maxTokens: 1500,
+        prompt: SC.buildAnalysisPrompt({
+          communityName: community ? community.name : "",
+          digestLines: SC.health.digest(state.posts, state.comments, state.pillars),
+          pillars: state.pillars,
+          samplePosts: samplePosts,
+          sampleComments: sampleComments,
+        }),
+      });
+      out.classList.remove("loading");
+      out.textContent = text.trim();
+    } catch (e) {
+      out.classList.add("hidden");
+      $("analyze-error").textContent = String((e && e.message) || e);
+    } finally {
+      btn.disabled = false;
     }
   }
 
@@ -320,6 +416,7 @@
         '<label class="field">Body <textarea data-f="body" rows="8">' +
         escapeHtml(d.body) + "</textarea></label>" +
         '<div class="row">' +
+        '<button class="btn small" data-act="bold" title="Unicode-bold selected text">𝗕</button>' +
         '<button class="btn small" data-act="copy">📋 Copy</button>' +
         '<button class="btn small" data-act="save">💾 Save edits</button>' +
         (d.status === "draft" ? '<button class="btn small" data-act="ready">Mark ready</button>' : "") +
@@ -339,7 +436,10 @@
     var body = card.querySelector('[data-f="body"]').value;
     var act = btn.dataset.act;
 
-    if (act === "copy") {
+    if (act === "bold") {
+      var field = card._lastField || card.querySelector('[data-f="body"]');
+      SC.uni.styleSelection(field, "bold");
+    } else if (act === "copy") {
       navigator.clipboard.writeText(title + "\n\n" + body);
       flash(btn, "✅");
     } else if (act === "save") {
@@ -631,6 +731,18 @@
       navigator.clipboard.writeText($("gen-title").value + "\n\n" + $("gen-body").value);
       flash($("gen-copy"), "✅ Copied");
     });
+    $("gen-title").addEventListener("input", updateGenCount);
+    $("gen-body").addEventListener("input", updateGenCount);
+    var lastGenField = null;
+    ["gen-title", "gen-body"].forEach(function (id) {
+      $(id).addEventListener("focus", function () { lastGenField = $(id); });
+    });
+    $("gen-bold").addEventListener("mousedown", function (e) {
+      e.preventDefault(); // keep the field's selection alive
+      SC.uni.styleSelection(lastGenField || $("gen-title"), "bold");
+      updateGenCount();
+    });
+    $("analyze-go").addEventListener("click", analyzeCommunity);
 
     // Ideas
     $("idea-add").addEventListener("click", addIdea);
@@ -638,6 +750,10 @@
 
     // Drafts / queue
     $("drafts-list").addEventListener("click", onDraftClick);
+    $("drafts-list").addEventListener("focusin", function (e) {
+      var card = e.target.closest && e.target.closest(".draft-card");
+      if (card && e.target.matches("input, textarea")) card._lastField = e.target;
+    });
     $("queue-list").addEventListener("click", onQueueClick);
 
     // Settings
