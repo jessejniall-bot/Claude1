@@ -122,6 +122,19 @@ Teaching / How-To (25%) · Personal Story (15%) · Engagement Question (20%) ·
 Tool or Resource Highlight (15%) · Win / Social Proof (15%) ·
 Behind-the-Scenes (10%)
 
+## Testing
+
+- `node test/smoke.test.js` — zero-dependency checks of everything pure:
+  pillar classifier, health engine (cadence, trend, balance, latency, comment
+  stats, score, improvements, digest), prompt builders, Unicode styling.
+- `node test/e2e.js` — drives the **real PWA** headlessly through
+  configure → sign in → add community → dashboard → AI deep review →
+  generate draft, with Supabase and the AI provider mocked at the network
+  layer (no accounts or keys touched). Needs `npm i playwright`; set
+  `PW_CHROMIUM=/path/to/chromium` to reuse an existing browser binary. It
+  serves the repo itself on port 8123 and writes screenshots next to the
+  script.
+
 ## Out of scope for v1
 
 - Auto-posting to Skool (no public API — the queue is copy-paste)
