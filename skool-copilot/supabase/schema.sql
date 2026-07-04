@@ -74,6 +74,26 @@ create index if not exists scraped_posts_community_posted_idx
   on public.scraped_posts (community_id, posted_at desc);
 
 -- ---------------------------------------------------------------------------
+-- scraped_comments -- comment-level raw material for response-latency metrics
+-- ---------------------------------------------------------------------------
+create table if not exists public.scraped_comments (
+  id             uuid primary key default gen_random_uuid(),
+  community_id   uuid not null references public.communities (id) on delete cascade,
+  comment_key    text not null,
+  post_key       text,
+  comment_text   text not null default '',
+  author         text,
+  likes          int  not null default 0,
+  commented_at   timestamptz,
+  scraped_at     timestamptz not null default now(),
+  unique (community_id, comment_key)
+);
+
+create index if not exists scraped_comments_community_time_idx
+  on public.scraped_comments (community_id, commented_at desc);
+
+
+-- ---------------------------------------------------------------------------
 -- ideas — captured seeds (member comments, health flags, manual notes)
 -- ---------------------------------------------------------------------------
 create table if not exists public.ideas (
@@ -126,6 +146,7 @@ alter table public.communities    enable row level security;
 alter table public.pillars        enable row level security;
 alter table public.voice_profiles enable row level security;
 alter table public.scraped_posts  enable row level security;
+alter table public.scraped_comments enable row level security;
 alter table public.ideas          enable row level security;
 alter table public.drafts         enable row level security;
 alter table public.queue          enable row level security;
@@ -148,6 +169,7 @@ $$;
 create policy "own pillars"        on public.pillars        for all using (public.owns_community(community_id)) with check (public.owns_community(community_id));
 create policy "own voice profile"  on public.voice_profiles for all using (public.owns_community(community_id)) with check (public.owns_community(community_id));
 create policy "own scraped posts"  on public.scraped_posts  for all using (public.owns_community(community_id)) with check (public.owns_community(community_id));
+create policy "own scraped comments" on public.scraped_comments for all using (public.owns_community(community_id)) with check (public.owns_community(community_id));
 create policy "own ideas"          on public.ideas          for all using (public.owns_community(community_id)) with check (public.owns_community(community_id));
 create policy "own drafts"         on public.drafts         for all using (public.owns_community(community_id)) with check (public.owns_community(community_id));
 create policy "own queue"          on public.queue          for all using (public.owns_community(community_id)) with check (public.owns_community(community_id));
