@@ -32,6 +32,14 @@
       navigator.serviceWorker.register("sw.js").catch(function () {});
     }
     wireStaticHandlers();
+    if (await SC.isDemo()) {
+      state.client = new SC.DemoClient();
+      state.user = await state.client.getUser();
+      await loadCommunities();
+      document.querySelector(".brand").textContent = "🧭 Skool Copilot — demo";
+      route();
+      return;
+    }
     state.client = await SC.getClient();
     if (!state.client) return show("view-configure");
     state.user = await state.client.getUser();
@@ -213,10 +221,13 @@
     btn.disabled = true;
     btn.textContent = "Generating…";
     try {
+      var demo = await SC.isDemo();
       var settings = (await SC.storage.get(AI_SETTINGS_KEY)) || {};
-      if (!settings.provider) throw new Error("Configure an AI provider in Settings first.");
-      var apiKey = await SC.vault.loadApiKey(settings.provider);
-      if (!apiKey) throw new Error("No API key stored for " + settings.provider + ". Add it in Settings.");
+      var apiKey = settings.provider ? await SC.vault.loadApiKey(settings.provider) : null;
+      if (!demo) {
+        if (!settings.provider) throw new Error("Configure an AI provider in Settings first.");
+        if (!apiKey) throw new Error("No API key stored for " + settings.provider + ". Add it in Settings.");
+      }
 
       var balance = SC.health.pillarBalance(state.posts, state.pillars);
       var overdue = SC.health.mostOverduePillar(balance);
@@ -235,28 +246,34 @@
         return (p.post_text || "").split("\n")[0].slice(0, 90);
       });
 
-      var text = await SC.generateDraft({
-        provider: settings.provider,
-        apiKey: apiKey,
-        model: settings.model,
-        system: SC.DRAFT_SYSTEM_PROMPT,
-        prompt: SC.buildDraftPrompt({
-          communityName: community ? community.name : "",
-          pillarName: overdue.name,
-          pillarDescription: overdue.description,
-          reason: overdue.deficit > 0
-            ? "This pillar is " + overdue.deficit + " points under its target share of recent posts."
-            : "",
-          healthDigest: SC.health.digest(state.posts, state.comments, state.pillars),
-          voice: state.voice || {},
-          seed: $("gen-seed").value.trim(),
-          recentTitles: recentTitles,
-          style: {
-            maxChars: Number($("gen-length").value) || 500,
-            emoji: $("gen-emoji").value,
-          },
-        }),
-      });
+      var text;
+      if (!apiKey) {
+        // demo mode without a key: canned draft so the flow still works
+        text = SC.demoDraft(overdue.name, $("gen-seed").value.trim());
+      } else {
+        text = await SC.generateDraft({
+          provider: settings.provider,
+          apiKey: apiKey,
+          model: settings.model,
+          system: SC.DRAFT_SYSTEM_PROMPT,
+          prompt: SC.buildDraftPrompt({
+            communityName: community ? community.name : "",
+            pillarName: overdue.name,
+            pillarDescription: overdue.description,
+            reason: overdue.deficit > 0
+              ? "This pillar is " + overdue.deficit + " points under its target share of recent posts."
+              : "",
+            healthDigest: SC.health.digest(state.posts, state.comments, state.pillars),
+            voice: state.voice || {},
+            seed: $("gen-seed").value.trim(),
+            recentTitles: recentTitles,
+            style: {
+              maxChars: Number($("gen-length").value) || 500,
+              emoji: $("gen-emoji").value,
+            },
+          }),
+        });
+      }
 
       var parts = text.split(/\n\s*\n/);
       var title = (parts.shift() || "").replace(/^#+\s*/, "").trim();
@@ -268,9 +285,10 @@
       updateGenCount();
       $("gen-result").classList.remove("hidden");
       $("gen-result").dataset.pillar = overdue.slug;
-      $("gen-result").dataset.provider = settings.provider;
-      $("gen-result").dataset.model =
-        settings.model || SC.PROVIDERS[settings.provider].defaultModel;
+      $("gen-result").dataset.provider = apiKey ? settings.provider : "demo";
+      $("gen-result").dataset.model = apiKey
+        ? (settings.model || SC.PROVIDERS[settings.provider].defaultModel)
+        : "sample";
     } catch (e) {
       $("gen-error").textContent = String((e && e.message) || e);
     } finally {
@@ -292,38 +310,45 @@
     var out = $("analyze-output");
     btn.disabled = true;
     try {
+      var demo = await SC.isDemo();
       var settings = (await SC.storage.get(AI_SETTINGS_KEY)) || {};
-      if (!settings.provider) throw new Error("Configure an AI provider in Settings first.");
-      var apiKey = await SC.vault.loadApiKey(settings.provider);
-      if (!apiKey) throw new Error("No API key stored for " + settings.provider + ". Add it in Settings.");
+      var apiKey = settings.provider ? await SC.vault.loadApiKey(settings.provider) : null;
+      if (!demo) {
+        if (!settings.provider) throw new Error("Configure an AI provider in Settings first.");
+        if (!apiKey) throw new Error("No API key stored for " + settings.provider + ". Add it in Settings.");
+      }
 
       out.classList.remove("hidden");
       out.classList.add("loading");
       out.textContent = "Reading your stats and comments…";
 
-      var community = currentCommunity();
-      var sampleComments = state.comments.slice(0, 40).map(function (c) {
-        return (c.author || "member") + ": " +
-          (c.comment_text || "").replace(/\s+/g, " ").slice(0, 200);
-      });
-      var samplePosts = state.posts.slice(0, 10).map(function (p) {
-        return (p.post_text || "").split("\n")[0].slice(0, 90);
-      });
-
-      var text = await SC.generateDraft({
-        provider: settings.provider,
-        apiKey: apiKey,
-        model: settings.model,
-        system: SC.ANALYSIS_SYSTEM_PROMPT,
-        maxTokens: 1500,
-        prompt: SC.buildAnalysisPrompt({
-          communityName: community ? community.name : "",
-          digestLines: SC.health.digest(state.posts, state.comments, state.pillars),
-          pillars: state.pillars,
-          samplePosts: samplePosts,
-          sampleComments: sampleComments,
-        }),
-      });
+      var digestLines = SC.health.digest(state.posts, state.comments, state.pillars);
+      var text;
+      if (!apiKey) {
+        text = SC.demoReview(digestLines);
+      } else {
+        var sampleComments = state.comments.slice(0, 40).map(function (c) {
+          return (c.author || "member") + ": " +
+            (c.comment_text || "").replace(/\s+/g, " ").slice(0, 200);
+        });
+        var samplePosts = state.posts.slice(0, 10).map(function (p) {
+          return (p.post_text || "").split("\n")[0].slice(0, 90);
+        });
+        text = await SC.generateDraft({
+          provider: settings.provider,
+          apiKey: apiKey,
+          model: settings.model,
+          system: SC.ANALYSIS_SYSTEM_PROMPT,
+          maxTokens: 1500,
+          prompt: SC.buildAnalysisPrompt({
+            communityName: currentCommunity() ? currentCommunity().name : "",
+            digestLines: digestLines,
+            pillars: state.pillars,
+            samplePosts: samplePosts,
+            sampleComments: sampleComments,
+          }),
+        });
+      }
       out.classList.remove("loading");
       out.textContent = text.trim();
     } catch (e) {
@@ -709,9 +734,17 @@
     }
 
     $("auth-signout").addEventListener("click", async function () {
-      await state.client.signOut();
+      var wasDemo = await SC.isDemo();
+      await state.client.signOut(); // in demo mode this clears the flag + sample db
       location.hash = "";
-      show("view-auth");
+      if (wasDemo) location.reload();
+      else show("view-auth");
+    });
+
+    // Demo mode
+    $("demo-go").addEventListener("click", async function () {
+      await SC.enableDemo();
+      location.reload();
     });
 
     // Setup

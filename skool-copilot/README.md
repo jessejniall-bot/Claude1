@@ -21,6 +21,22 @@ AI calls go **directly from your browser to the provider** using your own key.
 Keys are AES-GCM-encrypted with a locally generated device key and stored only
 in browser storage — they are never sent to the backend.
 
+## Try it in 30 seconds (no accounts, no keys)
+
+Serve the folder and open the PWA, then click **🎪 Try the demo**:
+
+```bash
+cd skool-copilot
+python3 -m http.server 8080
+# open http://localhost:8080/pwa/ → "Try the demo"
+```
+
+Demo mode runs the entire app on realistic sample data stored in your
+browser — health score, charts, improvement suggestions, idea inbox, drafts,
+queue. Generate and AI-review return sample output until you add a real AI
+key in Settings (with a key, they make real calls even in demo mode). Sign
+out to leave the demo.
+
 ## Setup
 
 1. **Backend** — create a free [Supabase](https://supabase.com) project, open
@@ -61,6 +77,18 @@ detected", or "not in your allowlist". This is not tamper-proof against
 deliberate spoofing, but prevents accidental or casual use against communities
 you don't run. Skool can change its DOM/data at any time; the selectors and
 data paths live at the top of `extension/content/scraper.js`.
+
+### Debugging the scraper on your community
+
+The status pill shows live sync counts ("… · 12p / 34c synced") and its hover
+tooltip reports the slug, allowlist state, which admin signal matched, and
+totals for this visit. For verbose extraction logs, run
+`window.SC_COPILOT_DEBUG = true` in the page console — every scrape pass then
+logs how many posts/comments it found and whether it used `__NEXT_DATA__` or
+the DOM fallback. If counts stay at zero on a community you admin, the
+heuristics in `extension/content/scraper.js` need updating for Skool's
+current markup — the pill tooltip tells you which half (admin signal vs
+extraction) is failing.
 
 ## Multi-provider AI (BYOK)
 

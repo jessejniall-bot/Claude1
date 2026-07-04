@@ -1,5 +1,5 @@
 /* Skool Community Copilot — PWA service worker (app-shell cache) */
-var CACHE = "sc-shell-v2";
+var CACHE = "sc-shell-v3";
 var SHELL = [
   "./index.html",
   "./styles.css",
@@ -14,6 +14,7 @@ var SHELL = [
   "../extension/shared/health-engine.js",
   "../extension/shared/unicode-style.js",
   "../extension/shared/default-pillars.js",
+  "../extension/shared/demo-data.js",
 ];
 
 self.addEventListener("install", function (event) {

@@ -46,6 +46,7 @@ body {
 }
 
 .hidden { display: none !important; }
+.sep { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
 .muted { color: var(--muted); font-size: 13px; }
 .error { color: var(--critical); font-size: 13px; min-height: 1em; }
 

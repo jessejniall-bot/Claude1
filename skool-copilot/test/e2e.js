@@ -237,12 +237,59 @@ const AI_DRAFT =
   await page.click("#gen-save");
   await page.waitForTimeout(300);
 
+  await ctx.close();
+
+  /* ---------- scenario 2: demo mode, zero backend, zero mocks ------ */
+  const ctx2 = await browser.newContext({
+    viewport: { width: 480, height: 900 },
+    serviceWorkers: "block",
+  });
+  const page2 = await ctx2.newPage();
+  const errors2 = [];
+  page2.on("pageerror", (e) => errors2.push("pageerror: " + e.message));
+  page2.on("console", (m) => { if (m.type() === "error") errors2.push("console: " + m.text()); });
+
+  await page2.goto("http://127.0.0.1:" + PORT + "/pwa/");
+  await page2.waitForSelector("#view-configure:not(.hidden)");
+  await page2.click("#demo-go");
+  await page2.waitForSelector("#view-dashboard:not(.hidden)");
+  await page2.waitForFunction(() => {
+    const el = document.getElementById("score-total");
+    return el && el.textContent !== "—" && el.textContent.trim() !== "";
+  });
+  const demoScore = (await page2.textContent("#score-total")).trim();
+  console.log("demo mode: dashboard score=" + demoScore);
+
+  // canned review with no key configured
+  await page2.click("#analyze-go");
+  await page2.waitForFunction(() => {
+    const el = document.getElementById("analyze-output");
+    return el && !el.classList.contains("hidden") && el.textContent.includes("VERDICT");
+  });
+
+  // canned draft with no key configured, still unicode-bolded
+  await page2.click("#gen-go");
+  await page2.waitForSelector("#gen-result:not(.hidden)");
+  const demoTitle = await page2.inputValue("#gen-title");
+  const demoStyled = await page2.evaluate((t) => SC.uni.isStyled(t), demoTitle);
+  if (!demoStyled) throw new Error("demo draft title not unicode-bolded");
+  console.log("demo mode: canned review + draft OK");
+
+  // draft persists into the local demo db
+  await page2.click("#gen-save");
+  await page2.waitForTimeout(200);
+  await page2.click('#tabs a[href="#/drafts"]');
+  await page2.waitForSelector(".draft-card");
+  console.log("demo mode: saved draft visible in Drafts");
+  await page2.screenshot({ path: path.join(__dirname, "e2e-demo.png"), fullPage: false });
+
   await browser.close();
   server.close();
 
-  if (errors.length) {
+  const allErrors = errors.concat(errors2);
+  if (allErrors.length) {
     console.error("PAGE ERRORS:");
-    errors.forEach((e) => console.error("  " + e));
+    allErrors.forEach((e) => console.error("  " + e));
     process.exit(1);
   }
   console.log("E2E PASSED — no page errors");

@@ -32,7 +32,16 @@
     lastSyncAt: null,
     sentKeys: {},        // post_key -> true, avoids resending within this page session
     sentCommentKeys: {}, // comment_key -> true
+    syncedPosts: 0,      // diagnostics, surfaced in the status pill tooltip
+    syncedComments: 0,
+    adminSignal: null,   // which check matched, for debugging selector drift
   };
+
+  function debug() {
+    if (!window.SC_COPILOT_DEBUG) return;
+    var args = ["[Skool Copilot]"].concat([].slice.call(arguments));
+    console.debug.apply(console, args);
+  }
 
   // Keys that mark an object as a *comment* (it references a parent).
   var PARENT_REF_KEYS = ["postId", "post_id", "parentId", "parent_id", "rootId", "root_id", "parent", "root"];
@@ -107,6 +116,7 @@
       for (var i = 0; i < ADMIN_ROLE_PATHS.length; i++) {
         var role = dig(data, ADMIN_ROLE_PATHS[i]);
         if (typeof role === "string" && ADMIN_ROLE_VALUES[role.toLowerCase()]) {
+          state.adminSignal = "role:" + ADMIN_ROLE_PATHS[i] + "=" + role;
           return true;
         }
       }
@@ -114,14 +124,21 @@
     // Signal B: admin-only links.
     var sels = adminSelectors(slug);
     for (var j = 0; j < sels.length; j++) {
-      if (document.querySelector(sels[j])) return true;
+      if (document.querySelector(sels[j])) {
+        state.adminSignal = "selector:" + sels[j];
+        return true;
+      }
     }
     // Signal C: admin-only labeled controls.
     var candidates = document.querySelectorAll("a, button");
     for (var k = 0; k < candidates.length; k++) {
       var t = (candidates[k].textContent || "").trim().toLowerCase();
-      if (t && ADMIN_TEXT_LABELS.indexOf(t) !== -1) return true;
+      if (t && ADMIN_TEXT_LABELS.indexOf(t) !== -1) {
+        state.adminSignal = "label:" + t;
+        return true;
+      }
     }
+    state.adminSignal = null;
     return false;
   }
 
@@ -143,6 +160,9 @@
     if (state.active) {
       cls = "sc-active";
       text = "Copilot active — admin access confirmed";
+      if (state.syncedPosts || state.syncedComments) {
+        text += " · " + state.syncedPosts + "p / " + state.syncedComments + "c synced";
+      }
     } else if (state.allowed && !state.admin) {
       cls = "sc-inactive";
       text = "No admin access detected — Copilot inactive";
@@ -152,6 +172,11 @@
     }
     pill.className = cls;
     pill.textContent = text;
+    pill.title = "slug: " + state.slug +
+      " | allowlisted: " + state.allowed +
+      " | admin signal: " + (state.adminSignal || "none") +
+      " | synced this visit: " + state.syncedPosts + " posts, " +
+      state.syncedComments + " comments";
     pill.style.display = "block";
   }
 
@@ -356,25 +381,36 @@
     if (!posts.length) posts = collectDomPosts();
     posts = posts.filter(function (p) { return !state.sentKeys[p.post_key]; });
 
+    debug("scrape pass:", posts.length, "new posts found",
+      data ? "(via __NEXT_DATA__)" : "(via DOM fallback)");
+
     if (posts.length) {
       var res = await sendMessage({ type: "SCRAPED_POSTS", slug: state.slug, posts: posts });
       if (res && res.ok) {
         posts.forEach(function (p) { state.sentKeys[p.post_key] = true; });
+        state.syncedPosts += posts.length;
         state.lastSyncAt = Date.now();
+      } else {
+        debug("post sync failed:", res && res.error);
       }
     }
 
     var comments = data ? collectNextDataComments(data) : [];
     comments = comments.filter(function (c) { return !state.sentCommentKeys[c.comment_key]; });
+    debug("scrape pass:", comments.length, "new comments found");
     if (comments.length) {
       var cres = await sendMessage({
         type: "SCRAPED_COMMENTS", slug: state.slug, comments: comments,
       });
       if (cres && cres.ok) {
         comments.forEach(function (c) { state.sentCommentKeys[c.comment_key] = true; });
+        state.syncedComments += comments.length;
         state.lastSyncAt = Date.now();
+      } else {
+        debug("comment sync failed:", cres && cres.error);
       }
     }
+    renderPill(); // refresh the synced counters
   }
 
   /* ----------------------- idea capture button --------------------- */
@@ -416,6 +452,8 @@
     if (slug !== state.slug) {
       state.sentKeys = {};
       state.sentCommentKeys = {};
+      state.syncedPosts = 0;
+      state.syncedComments = 0;
     }
     state.slug = slug;
     state.allowed = false;
