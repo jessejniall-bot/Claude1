@@ -31,6 +31,25 @@
       <select id="sp-community"></select>
     </label>
 
+    <!-- Shown when the account has no communities yet -->
+    <section id="sp-add" class="card hidden">
+      <h2>Add your community</h2>
+      <p class="muted">Copilot only works with communities you own or admin —
+        it re-verifies admin access on every pageview before scraping.</p>
+      <label class="field">Name
+        <input id="sp-add-name" type="text" placeholder="My Community" />
+      </label>
+      <label class="field">Skool URL
+        <input id="sp-add-url" type="url" placeholder="https://www.skool.com/my-community" />
+      </label>
+      <label class="check-row">
+        <input id="sp-add-own" type="checkbox" />
+        I own or admin this community
+      </label>
+      <button id="sp-add-save" class="btn primary" type="button">Add community</button>
+      <p id="sp-add-error" class="error"></p>
+    </section>
+
     <section class="card" id="sp-health">
       <h2>Health</h2>
       <div id="sp-score" class="score-line"></div>

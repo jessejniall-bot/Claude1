@@ -19,17 +19,25 @@
   /* ----------------------------- boot ------------------------------ */
 
   async function boot() {
-    client = await SC.getClient();
-    if (!client) {
-      showAuth("Backend not configured yet. Open Settings and paste your Supabase URL + anon key first.");
-      return;
+    try {
+      client = await SC.getClient();
+      if (!client) {
+        showAuth("Backend not configured yet. Easiest path: open the Copilot web app " +
+          "with this extension installed — settings sync over automatically. " +
+          "Or open Settings here and paste your Supabase URL + anon key.");
+        return;
+      }
+      var user = await client.getUser();
+      if (!user) {
+        showAuth("Sign in with the same account you use in the Copilot web app.");
+        return;
+      }
+      await showMain();
+    } catch (e) {
+      // Never leave the panel blank — say what broke.
+      showAuth("Something went wrong: " + String((e && e.message) || e) +
+        " — check the backend settings, then reopen this panel.");
     }
-    var user = await client.getUser();
-    if (!user) {
-      showAuth("Sign in with the same account you use in the Copilot web app.");
-      return;
-    }
-    await showMain();
   }
 
   function showAuth(note) {
@@ -53,12 +61,56 @@
       opt.textContent = c.name;
       sel.appendChild(opt);
     });
-    if (!communities || !communities.length) {
-      $("sp-stats").innerHTML =
-        '<p class="muted">No communities yet. Add one in the Copilot web app, then refresh.</p>';
+    var none = !communities || !communities.length;
+    $("sp-add").classList.toggle("hidden", !none);
+    $("sp-health").classList.toggle("hidden", none);
+    if (none) {
+      $("sp-stats").innerHTML = "";
+      await prefillAddFromActiveTab();
       return;
     }
     await selectCommunity(communities[0].id);
+  }
+
+  // If the user is looking at their Skool community right now, prefill it.
+  async function prefillAddFromActiveTab() {
+    try {
+      var tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      var url = tabs && tabs[0] && tabs[0].url;
+      if (url && /skool\.com\//.test(url) && SC.skoolSlug(url)) {
+        $("sp-add-url").value = "https://www.skool.com/" + SC.skoolSlug(url);
+        if (!$("sp-add-name").value) {
+          $("sp-add-name").value = SC.skoolSlug(url)
+            .replace(/-/g, " ")
+            .replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+        }
+      }
+    } catch (e) { /* tabs unavailable — leave fields empty */ }
+  }
+
+  async function addCommunity() {
+    $("sp-add-error").textContent = "";
+    try {
+      var name = $("sp-add-name").value.trim();
+      var url = $("sp-add-url").value.trim();
+      if (!name || !url) throw new Error("Name and URL are required.");
+      if (!SC.skoolSlug(url)) throw new Error("That doesn't look like a Skool community URL.");
+      if (!$("sp-add-own").checked) {
+        throw new Error("Confirm that you own or admin this community.");
+      }
+      var user = await client.getUser();
+      await client.from("communities").insert({
+        user_id: user.id,
+        name: name,
+        skool_url: url,
+      });
+      chrome.runtime.sendMessage({ type: "REFRESH_COMMUNITIES" }, function () {
+        void chrome.runtime.lastError;
+      });
+      await showMain();
+    } catch (e) {
+      $("sp-add-error").textContent = String((e && e.message) || e);
+    }
   }
 
   async function selectCommunity(id) {
@@ -275,6 +327,7 @@
   $("sp-generate").addEventListener("click", generate);
   $("sp-copy").addEventListener("click", copyDraft);
   $("sp-save").addEventListener("click", saveDraft);
+  $("sp-add-save").addEventListener("click", addCommunity);
 
   boot();
 })();

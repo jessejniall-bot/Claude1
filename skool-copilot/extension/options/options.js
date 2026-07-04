@@ -50,12 +50,30 @@
     $("opt-ai-status").textContent = stored ? "A key is saved for this provider." : "";
   });
 
+  $("opt-test-backend").addEventListener("click", async function () {
+    $("opt-backend-status").textContent = "Testing…";
+    var result = await SC.verifyBackend(
+      $("opt-supabase-url").value, $("opt-supabase-key").value
+    );
+    $("opt-backend-status").textContent = result.ok
+      ? "✅ Backend reachable and schema installed."
+      : "❌ " + result.error;
+  });
+
   $("opt-save-backend").addEventListener("click", async function () {
+    $("opt-backend-status").textContent = "Checking…";
+    var result = await SC.verifyBackend(
+      $("opt-supabase-url").value, $("opt-supabase-key").value
+    );
+    if (!result.ok) {
+      $("opt-backend-status").textContent = "❌ " + result.error;
+      return;
+    }
     await SC.saveConfig({
       supabaseUrl: $("opt-supabase-url").value,
       supabaseAnonKey: $("opt-supabase-key").value,
     });
-    $("opt-backend-status").textContent = "Saved. Sign in from the side panel or web app.";
+    $("opt-backend-status").textContent = "✅ Saved. Sign in from the side panel.";
   });
 
   $("opt-save-ai").addEventListener("click", async function () {

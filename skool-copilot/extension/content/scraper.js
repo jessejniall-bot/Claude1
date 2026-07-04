@@ -236,11 +236,17 @@
         [user.firstName || user.first_name, user.lastName || user.last_name]
           .filter(Boolean).join(" ") ||
         null;
+      // Skool sometimes exposes comments as a count, sometimes as an
+      // array of comment objects — accept both.
+      var rawComments = meta.comments ?? obj.commentsCount ?? obj.comments ?? 0;
+      var commentCount = Array.isArray(rawComments)
+        ? rawComments.length
+        : Number(rawComments) || 0;
       return {
         post_key: String(id),
         post_text: text.slice(0, 8000),
         likes: Number(meta.upvotes ?? obj.upvotes ?? meta.likes ?? 0) || 0,
-        comments: Number(meta.comments ?? obj.commentsCount ?? obj.comments ?? 0) || 0,
+        comments: commentCount,
         posted_at: toIso(obj.createdAt || obj.created_at || meta.createdAt),
         author: authorName,
         first_comment_at: toIso(meta.lastComment || meta.firstCommentAt || null),

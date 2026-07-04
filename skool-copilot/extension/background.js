@@ -19,11 +19,20 @@ importScripts(
 
 var COMMUNITIES_CACHE_KEY = "sc_communities_cache";
 
-// Clicking the toolbar icon opens the side panel.
-chrome.runtime.onInstalled.addListener(function () {
-  if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
-    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(function () {});
+// Clicking the toolbar icon opens the side panel. Set the behavior on
+// every service-worker start (not just install) so it survives updates
+// and browser restarts; keep an onClicked fallback for Chrome versions
+// where the behavior flag doesn't stick.
+if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(function () {});
+}
+chrome.action.onClicked.addListener(function (tab) {
+  if (chrome.sidePanel && chrome.sidePanel.open) {
+    chrome.sidePanel.open({ windowId: tab.windowId }).catch(function () {});
   }
+});
+
+chrome.runtime.onInstalled.addListener(function () {
   chrome.alarms.create("refresh-communities", { periodInMinutes: 60 });
 });
 

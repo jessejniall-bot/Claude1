@@ -6,6 +6,7 @@
   <title>Skool Community Copilot</title>
   <meta name="description" content="Content health dashboard and on-voice draft generator for your Skool community." />
   <meta name="theme-color" content="#2a78d6" />
+  <meta name="sc-copilot" content="pwa" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="styles.css" />
@@ -29,10 +30,16 @@
       <div class="card narrow">
         <h2>Connect your backend</h2>
         <p class="muted">
-          Copilot stores data in <strong>your own</strong> Supabase project.
-          Create one at supabase.com, run <code>supabase/schema.sql</code> in its
-          SQL editor, then paste the project credentials here (Settings → API).
+          Copilot stores data in <strong>your own</strong> Supabase project
+          (free tier is fine):
         </p>
+        <ol class="muted steps">
+          <li>Create a project at <a href="https://supabase.com/dashboard" target="_blank" rel="noopener">supabase.com</a></li>
+          <li><button id="cfg-copy-schema" class="btn small" type="button">📋 Copy schema SQL</button>
+              then paste &amp; run it in the project's <em>SQL Editor</em></li>
+          <li>Copy the URL + anon key from <em>Settings → API</em> into the fields below</li>
+        </ol>
+        <p id="ext-status-cfg" class="muted"></p>
         <label class="field">Project URL
           <input id="cfg-url" type="url" placeholder="https://xxxx.supabase.co" />
         </label>
@@ -256,6 +263,7 @@
 
       <div class="card">
         <h3>Backend & account</h3>
+        <p id="ext-status-set" class="muted"></p>
         <label class="field">Supabase URL <input id="set-supabase-url" type="url" /></label>
         <label class="field">Supabase anon key <input id="set-supabase-key" type="password" /></label>
         <div class="row">

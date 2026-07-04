@@ -273,4 +273,44 @@
     if (!cfg.supabaseUrl || !cfg.supabaseAnonKey) return null;
     return new SupabaseLite(cfg.supabaseUrl, cfg.supabaseAnonKey);
   };
+
+  // Diagnose a Supabase URL + anon key and report exactly what is wrong.
+  // Returns { ok: true } or { ok: false, error: "human-readable reason" }.
+  SC.verifyBackend = async function (url, anonKey) {
+    url = String(url || "").trim().replace(/\/+$/, "");
+    anonKey = String(anonKey || "").trim();
+    if (!/^https:\/\/.+\.supabase\.(co|in|red)$/.test(url) && !/^https?:\/\//.test(url)) {
+      return { ok: false, error: "That doesn't look like a project URL (expected https://xxxx.supabase.co)." };
+    }
+    var res;
+    try {
+      res = await fetch(url + "/auth/v1/health", { headers: { apikey: anonKey } });
+    } catch (e) {
+      return { ok: false, error: "Could not reach " + url + " — check the URL and your connection." };
+    }
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, error: "The project answered but rejected the key — re-copy the anon (public) key from Settings → API." };
+    }
+    if (!res.ok) {
+      return { ok: false, error: "Unexpected response from the project (" + res.status + ") — is the URL right?" };
+    }
+    // Schema installed? pillars only exists after schema.sql was run.
+    try {
+      res = await fetch(url + "/rest/v1/pillars?limit=1", {
+        headers: { apikey: anonKey, Authorization: "Bearer " + anonKey },
+      });
+    } catch (e) {
+      return { ok: false, error: "Auth works but the data API is unreachable — try again in a minute." };
+    }
+    if (res.status === 404) {
+      return { ok: false, error: "Connected, but the schema isn't installed yet — run supabase/schema.sql in the project's SQL editor, then test again." };
+    }
+    if (res.status === 401) {
+      return { ok: false, error: "Connected, but the anon key was rejected by the data API — re-copy the anon (public) key." };
+    }
+    if (!res.ok) {
+      return { ok: false, error: "Data API error (" + res.status + ") — check that schema.sql ran without errors." };
+    }
+    return { ok: true };
+  };
 })(typeof globalThis !== "undefined" ? (globalThis.SC = globalThis.SC || {}) : {});

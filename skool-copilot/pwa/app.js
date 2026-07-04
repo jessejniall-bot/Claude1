@@ -32,6 +32,9 @@
       navigator.serviceWorker.register("sw.js").catch(function () {});
     }
     wireStaticHandlers();
+    // connect.js runs at document_idle, after us — check again shortly.
+    setTimeout(renderExtensionStatus, 600);
+    setTimeout(renderExtensionStatus, 2500);
     if (await SC.isDemo()) {
       state.client = new SC.DemoClient();
       state.user = await state.client.getUser();
@@ -589,6 +592,7 @@
     var cfg = await SC.loadConfig();
     $("set-supabase-url").value = cfg.supabaseUrl;
     $("set-supabase-key").value = cfg.supabaseAnonKey;
+    renderExtensionStatus();
   }
 
   function pillarRow(p) {
@@ -693,6 +697,23 @@
     setTimeout(function () { btn.textContent = original; }, 1400);
   }
 
+  // The extension's connect.js content script (if installed) listens for
+  // this event and mirrors saved settings into extension storage.
+  function notifyExtension() {
+    document.dispatchEvent(new CustomEvent("sc-sync"));
+  }
+
+  function renderExtensionStatus() {
+    var connected = document.documentElement.hasAttribute("data-sc-extension");
+    var msg = connected
+      ? "🧩 Extension detected — backend + AI settings sync to it automatically."
+      : "🧩 Extension not detected on this page. Install it and reload — settings will sync over automatically.";
+    ["ext-status-cfg", "ext-status-set"].forEach(function (id) {
+      var el = $(id);
+      if (el) el.textContent = msg;
+    });
+  }
+
   /* ----------------------------- wiring ----------------------------- */
 
   function wireStaticHandlers() {
@@ -702,9 +723,26 @@
       var url = $("cfg-url").value.trim();
       var key = $("cfg-key").value.trim();
       if (!url || !key) { $("cfg-error").textContent = "Both fields are required."; return; }
+      $("cfg-error").textContent = "Checking the project…";
+      var result = await SC.verifyBackend(url, key);
+      if (!result.ok) { $("cfg-error").textContent = "❌ " + result.error; return; }
       await SC.saveConfig({ supabaseUrl: url, supabaseAnonKey: key });
+      notifyExtension();
       state.client = await SC.getClient();
       show("view-auth");
+    });
+
+    // Copy schema.sql to the clipboard for pasting into Supabase.
+    $("cfg-copy-schema").addEventListener("click", async function () {
+      try {
+        var res = await fetch("../supabase/schema.sql");
+        if (!res.ok) throw new Error("fetch failed");
+        await navigator.clipboard.writeText(await res.text());
+        flash($("cfg-copy-schema"), "✅ Copied");
+      } catch (e) {
+        $("cfg-error").textContent =
+          "Couldn't load schema.sql from this host — copy it from the repo instead.";
+      }
     });
 
     // Auth
@@ -802,8 +840,9 @@
       if (key) await SC.vault.saveApiKey(provider, key);
       await SC.storage.set(AI_SETTINGS_KEY, { provider: provider, model: $("set-model").value });
       $("set-api-key").value = "";
+      notifyExtension();
       $("set-ai-status").textContent = key
-        ? "Key saved (encrypted, local to this browser)."
+        ? "Key saved (encrypted, local to this browser — syncs to the extension if installed)."
         : "Provider preference saved.";
     });
     $("set-test").addEventListener("click", async function () {
@@ -841,6 +880,7 @@
         supabaseUrl: $("set-supabase-url").value,
         supabaseAnonKey: $("set-supabase-key").value,
       });
+      notifyExtension();
       location.reload();
     });
   }

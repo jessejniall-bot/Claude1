@@ -47,6 +47,9 @@ body {
 
 .hidden { display: none !important; }
 .sep { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
+.steps { padding-left: 20px; margin: 8px 0 12px; }
+.steps li { margin-bottom: 6px; }
+.steps a { color: var(--series-1); }
 .muted { color: var(--muted); font-size: 13px; }
 .error { color: var(--critical); font-size: 13px; min-height: 1em; }
 

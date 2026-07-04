@@ -1,5 +1,11 @@
 # Skool Community Copilot
 
+> **Fast start:** hosted web app at
+> **https://jessejniall-bot.github.io/Claude1/pwa/** (auto-deployed from this
+> repo) — click "Try the demo" for zero-setup, or follow **[SETUP.md](SETUP.md)**
+> for the ~5-minute real setup. With the extension installed, opening the web
+> app syncs your settings into the extension automatically.
+
 A Chrome extension + companion PWA that works with **any** Skool community you
 own or admin. It reads your community's post feed (DOM/embedded-data based —
 Skool has no public API), measures content health, and drafts on-pillar,

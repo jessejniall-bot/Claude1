@@ -25,8 +25,13 @@
     <label class="field">Anon (public) key
       <input id="opt-supabase-key" type="password" placeholder="eyJ..." />
     </label>
-    <button id="opt-save-backend" class="btn primary" type="button">Save backend</button>
+    <div class="row">
+      <button id="opt-test-backend" class="btn" type="button">Test backend</button>
+      <button id="opt-save-backend" class="btn primary" type="button">Save backend</button>
+    </div>
     <p id="opt-backend-status" class="muted"></p>
+    <p class="muted">Tip: with this extension installed, opening the Copilot web app
+      syncs these settings over automatically.</p>
   </section>
 
   <section class="card">
@@ -52,6 +57,7 @@
   </section>
 
   <script src="../shared/config.js"></script>
+  <script src="../shared/supabase-lite.js"></script>
   <script src="../shared/key-vault.js"></script>
   <script src="../shared/ai-providers.js"></script>
   <script src="options.js"></script>
