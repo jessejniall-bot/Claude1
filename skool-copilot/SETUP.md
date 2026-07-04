@@ -5,11 +5,32 @@ the real setup when you're ready.
 
 ---
 
-## Path A — see it working right now (0 minutes)
+## Path A — see it working right now
 
-1. Open the hosted web app:
-   **https://jessejniall-bot.github.io/Claude1/pwa/**
-   (auto-deployed from this repo by GitHub Actions)
+### One-time: turn on the hosted web app
+
+The repo already contains a GitHub Actions workflow that deploys the web app
+to GitHub Pages — but **this repo is currently private, and GitHub Pages on a
+private repo requires a paid GitHub plan**. One of these, once:
+
+- **Easiest:** make the repo public — GitHub → repo **Settings → General →
+  Danger Zone → Change visibility → Public**. Then go to the **Actions** tab,
+  open "Deploy Skool Copilot PWA to GitHub Pages", and click **Re-run** (or
+  just push anything). ~1 minute later the app is live at
+  **https://jessejniall-bot.github.io/Claude1/pwa/**
+- On a paid plan: **Settings → Pages → Source: GitHub Actions**, then re-run
+  the workflow.
+
+No hosting? Run it locally instead:
+
+```bash
+cd skool-copilot && python3 -m http.server 8080
+# open http://localhost:8080/pwa/
+```
+
+### Then
+
+1. Open the web app.
 2. Click **🎪 Try the demo**.
 
 That's the whole app on sample data — health score, charts, improvement

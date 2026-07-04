@@ -1,10 +1,11 @@
 # Skool Community Copilot
 
-> **Fast start:** hosted web app at
-> **https://jessejniall-bot.github.io/Claude1/pwa/** (auto-deployed from this
-> repo) — click "Try the demo" for zero-setup, or follow **[SETUP.md](SETUP.md)**
-> for the ~5-minute real setup. With the extension installed, opening the web
-> app syncs your settings into the extension automatically.
+> **Fast start:** follow **[SETUP.md](SETUP.md)**. A GitHub Actions workflow
+> deploys the web app to **https://jessejniall-bot.github.io/Claude1/pwa/** —
+> it needs one one-time unlock (make the repo public, or enable Pages on a
+> paid plan; see SETUP.md), or run it locally with one command. With the
+> extension installed, opening the web app syncs your settings into the
+> extension automatically.
 
 A Chrome extension + companion PWA that works with **any** Skool community you
 own or admin. It reads your community's post feed (DOM/embedded-data based —
