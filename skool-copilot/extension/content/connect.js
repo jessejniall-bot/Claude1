@@ -18,7 +18,7 @@
 
   if (!document.querySelector('meta[name="sc-copilot"]')) return;
 
-  var KEYS = ["sc_supabase_config", "sc_ai_settings", "sc_vault_key", "sc_ai_keys"];
+  var KEYS = ["sc_supabase_config", "sc_ai_settings", "sc_vault_key", "sc_ai_keys", "sc_solo_mode"];
 
   function readLocal() {
     var out = {};
@@ -41,6 +41,9 @@
     try {
       chrome.storage.local.set(data, function () {
         if (chrome.runtime.lastError) return;
+        // Solo mode is the one flag whose *absence* is meaningful: if the
+        // web app turned it off, turn it off here too.
+        if (!("sc_solo_mode" in data)) chrome.storage.local.remove("sc_solo_mode");
         chrome.runtime.sendMessage({ type: "REFRESH_COMMUNITIES" }, function () {
           void chrome.runtime.lastError;
         });

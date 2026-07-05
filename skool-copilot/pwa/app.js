@@ -47,8 +47,15 @@
     }
     state.client = await SC.getClient();
     if (!state.client) return show("view-configure");
-    state.user = await state.client.getUser();
-    if (!state.user) return show("view-auth");
+    if (await SC.isSolo()) {
+      // Solo mode: no accounts. The anon key alone is the credential
+      // (requires the one-time supabase/solo-mode.sql).
+      state.user = { id: null, solo: true };
+      document.querySelector(".brand").textContent = "🧭 Skool Copilot — solo";
+    } else {
+      state.user = await state.client.getUser();
+      if (!state.user) return show("view-auth");
+    }
     await loadCommunities();
     if (!state.communities.length) return show("view-setup");
     route();
@@ -674,11 +681,9 @@
       if (!$("setup-own").checked) {
         throw new Error("Confirm that you own or admin this community.");
       }
-      var rows = await state.client.from("communities").insert({
-        user_id: state.user.id,
-        name: name,
-        skool_url: url,
-      });
+      var payload = { name: name, skool_url: url };
+      if (state.user && state.user.id) payload.user_id = state.user.id; // absent in solo mode
+      var rows = await state.client.from("communities").insert(payload);
       await loadCommunities();
       if (rows && rows[0]) state.currentId = rows[0].id;
       $("setup-name").value = "";
@@ -779,10 +784,49 @@
 
     $("auth-signout").addEventListener("click", async function () {
       var wasDemo = await SC.isDemo();
+      var wasSolo = await SC.isSolo();
+      if (wasSolo) await SC.disableSolo();
       await state.client.signOut(); // in demo mode this clears the flag + sample db
+      notifyExtension();
       location.hash = "";
-      if (wasDemo) location.reload();
+      if (wasDemo || wasSolo) location.reload();
       else show("view-auth");
+    });
+
+    // Solo mode: copy the one-time SQL, then enable after it has been run.
+    $("solo-copy-sql").addEventListener("click", async function () {
+      try {
+        var res = await fetch("../supabase/solo-mode.sql");
+        if (!res.ok) throw new Error("fetch failed");
+        await navigator.clipboard.writeText(await res.text());
+        flash($("solo-copy-sql"), "✅ Copied");
+      } catch (e) {
+        $("solo-status").textContent =
+          "Couldn't load solo-mode.sql from this host — copy it from the repo instead.";
+      }
+    });
+    $("solo-enable").addEventListener("click", async function () {
+      $("solo-status").textContent = "Checking that the solo-mode SQL has been run…";
+      try {
+        // Probe: without a session, an insert only succeeds once the solo
+        // policies exist. Clean up the probe row immediately.
+        var probe = await state.client.from("communities").insert({
+          name: "__solo_probe__",
+          skool_url: "https://www.skool.com/__solo-probe__",
+        });
+        if (probe && probe[0] && probe[0].id) {
+          await state.client.from("communities").delete().eq("id", probe[0].id);
+        }
+        await SC.enableSolo();
+        notifyExtension();
+        $("solo-status").textContent = "✅ Solo mode on — loading…";
+        location.reload();
+      } catch (e) {
+        $("solo-status").textContent =
+          "❌ Not yet: the database still requires sign-in. Copy the solo-mode SQL " +
+          "(step 1), run it in Supabase → SQL Editor, then click Enable again. " +
+          "(Details: " + String((e && e.message) || e) + ")";
+      }
     });
 
     // Demo mode

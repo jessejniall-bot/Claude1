@@ -7,31 +7,11 @@ the real setup when you're ready.
 
 ## Path A — see it working right now
 
-### One-time: turn on the hosted web app
-
-The repo already contains a GitHub Actions workflow that deploys the web app
-to GitHub Pages — but **this repo is currently private, and GitHub Pages on a
-private repo requires a paid GitHub plan**. One of these, once:
-
-- **Easiest:** make the repo public — GitHub → repo **Settings → General →
-  Danger Zone → Change visibility → Public**. Then go to the **Actions** tab,
-  open "Deploy Skool Copilot PWA to GitHub Pages", and click **Re-run** (or
-  just push anything). ~1 minute later the app is live at
-  **https://jessejniall-bot.github.io/Claude1/pwa/**
-- On a paid plan: **Settings → Pages → Source: GitHub Actions**, then re-run
-  the workflow.
-
-No hosting? Run it locally instead:
-
-```bash
-cd skool-copilot && python3 -m http.server 8080
-# open http://localhost:8080/pwa/
-```
-
-### Then
-
-1. Open the web app.
+1. Open the hosted web app: **https://jessejniall-bot.github.io/Claude1/pwa/**
 2. Click **🎪 Try the demo**.
+
+*(Prefer to run it on your own machine? `cd skool-copilot && python3 -m
+http.server 8080`, then open http://localhost:8080/pwa/.)*
 
 That's the whole app on sample data — health score, charts, improvement
 suggestions, drafts, queue. Add an AI key in Settings and the generate /
@@ -59,6 +39,17 @@ deep-review buttons make real calls even in demo mode.
    wrong key, schema not installed).
 5. Create your account, add your community (name + Skool URL + the ownership
    checkbox), paste an AI key in Settings. Done with the web side.
+
+**Don't want accounts at all?** Use **solo mode** — it removes the sign-in
+screen from both the app and the extension (meant for a personal,
+single-user setup). On the sign-in screen: click **📋 Copy solo-mode SQL**,
+run it once in Supabase → SQL Editor, then click **🔓 Enable solo mode**.
+After that there is no sign-in anywhere; the extension picks the setting up
+automatically the next time you open the web app. ⚠️ Trade-off: anyone with
+your project URL + anon key could then read/write your data, so don't share
+those two values. (This also sidesteps every email-confirmation headache.)
+To go back to accounts later, the revert SQL is at the bottom of
+`supabase/solo-mode.sql`.
 
 ### 2. Extension (once, ~2 min)
 

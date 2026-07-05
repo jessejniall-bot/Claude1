@@ -63,6 +63,15 @@
     });
   };
 
+  // Solo mode: single-user install, no accounts/sign-in. Requires the
+  // one-time supabase/solo-mode.sql to open the tables to the anon key.
+  var SOLO_KEY = "sc_solo_mode";
+  SC.isSolo = function () {
+    return SC.storage.get(SOLO_KEY).then(function (v) { return !!v; });
+  };
+  SC.enableSolo = function () { return SC.storage.set(SOLO_KEY, true); };
+  SC.disableSolo = function () { return SC.storage.remove(SOLO_KEY); };
+
   // Normalize any Skool URL / slug input to a canonical community slug.
   SC.skoolSlug = function (input) {
     if (!input) return "";

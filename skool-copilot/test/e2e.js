@@ -283,10 +283,44 @@ const AI_DRAFT =
   console.log("demo mode: saved draft visible in Drafts");
   await page2.screenshot({ path: path.join(__dirname, "e2e-demo.png"), fullPage: false });
 
+  await ctx2.close();
+
+  /* ---------- scenario 3: solo mode (no accounts, mocked backend) --- */
+  const ctx3 = await browser.newContext({
+    viewport: { width: 480, height: 900 },
+    serviceWorkers: "block",
+  });
+  await ctx3.route("**/*", (route) => {
+    const req = route.request();
+    const url = new URL(req.url());
+    if (url.hostname === "test.supabase.co") {
+      return route.fulfill(handleSupabase(req.method(), url));
+    }
+    return route.continue();
+  });
+  const page3 = await ctx3.newPage();
+  const errors3 = [];
+  page3.on("pageerror", (e) => errors3.push("pageerror: " + e.message));
+  page3.on("console", (m) => { if (m.type() === "error") errors3.push("console: " + m.text()); });
+
+  await page3.goto("http://127.0.0.1:" + PORT + "/pwa/");
+  await page3.waitForSelector("#view-configure:not(.hidden)");
+  await page3.fill("#cfg-url", SB);
+  await page3.fill("#cfg-key", "fake-anon-key");
+  await page3.click("#cfg-save");
+  await page3.waitForSelector("#view-auth:not(.hidden)");
+  // Skip sign-in entirely: enable solo mode (probe insert hits the mock).
+  await page3.click("#solo-enable");
+  await page3.waitForSelector("#view-dashboard:not(.hidden)", { timeout: 15000 });
+  const brand = await page3.textContent(".brand");
+  if (brand.indexOf("solo") === -1) throw new Error("solo brand marker missing: " + brand);
+  console.log("solo mode: dashboard reached with no sign-in (" + brand.trim() + ")");
+  await ctx3.close();
+
   await browser.close();
   server.close();
 
-  const allErrors = errors.concat(errors2);
+  const allErrors = errors.concat(errors2).concat(errors3);
   if (allErrors.length) {
     console.error("PAGE ERRORS:");
     allErrors.forEach((e) => console.error("  " + e));

@@ -27,9 +27,14 @@
           "Or open Settings here and paste your Supabase URL + anon key.");
         return;
       }
+      if (await SC.isSolo()) {
+        await showMain(); // solo mode: no accounts anywhere
+        return;
+      }
       var user = await client.getUser();
       if (!user) {
-        showAuth("Sign in with the same account you use in the Copilot web app.");
+        showAuth("Sign in with the same account you use in the Copilot web app. " +
+          "(Or enable solo mode in the web app — it removes sign-in here too.)");
         return;
       }
       await showMain();
@@ -99,11 +104,9 @@
         throw new Error("Confirm that you own or admin this community.");
       }
       var user = await client.getUser();
-      await client.from("communities").insert({
-        user_id: user.id,
-        name: name,
-        skool_url: url,
-      });
+      var payload = { name: name, skool_url: url };
+      if (user && user.id) payload.user_id = user.id; // absent in solo mode
+      await client.from("communities").insert(payload);
       chrome.runtime.sendMessage({ type: "REFRESH_COMMUNITIES" }, function () {
         void chrome.runtime.lastError;
       });
