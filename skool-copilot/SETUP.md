@@ -62,12 +62,10 @@ deep-review buttons make real calls even in demo mode.
 
 ### 2. Extension (once, ~2 min)
 
-1. Get the code. **Important: the code lives on the
-   `claude/fable-5-skool-copilot-q2605p` branch, not `main`** — a plain
-   "Download ZIP" from the repo's front page gives you an empty `main` and the
-   extension won't be there. Use the direct branch download instead:
-   **https://github.com/jessejniall-bot/Claude1/archive/refs/heads/claude/fable-5-skool-copilot-q2605p.zip**
-   Then unzip it (Mac: double-click; Windows: right-click → Extract All).
+1. Get the code: on the repo's front page
+   ([github.com/jessejniall-bot/Claude1](https://github.com/jessejniall-bot/Claude1))
+   click the green **Code** button → **Download ZIP**, then unzip it (Mac:
+   double-click; Windows: right-click → Extract All).
 2. Open `chrome://extensions`, turn on **Developer mode** (top right), click
    **Load unpacked**, and select the **`skool-copilot/extension`** folder
    *inside* the unzipped folder — that exact folder, not the repo root.
