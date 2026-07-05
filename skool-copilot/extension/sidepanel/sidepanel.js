@@ -299,7 +299,9 @@
         var session = await client.ensureSession();
         if (!session) {
           $("sp-auth-error").textContent =
-            "Account created. Confirm your email, then sign in.";
+            "Account created, but Supabase wants an email confirmation (its free email " +
+            "sender is rate-limited). Easiest fix: in Supabase turn OFF Authentication → " +
+            "Sign In / Providers → Email → \"Confirm email\", then sign in.";
           return;
         }
       } else {
@@ -310,7 +312,7 @@
       });
       await showMain();
     } catch (e) {
-      $("sp-auth-error").textContent = String((e && e.message) || e);
+      $("sp-auth-error").textContent = SC.friendlyAuthError(e);
     }
   }
 

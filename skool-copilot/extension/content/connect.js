@@ -48,8 +48,10 @@
     } catch (e) { /* extension context gone (reloaded) */ }
   }
 
-  // Tell the web app the extension is here so it can show "connected".
+  // Tell the web app the extension is here so it can show "connected" —
+  // both as an attribute (for late checks) and an event (for live update).
   document.documentElement.setAttribute("data-sc-extension", chrome.runtime.id || "1");
+  document.dispatchEvent(new CustomEvent("sc-extension-ready"));
 
   sync();
   // The app dispatches "sc-sync" after saving settings; also re-check

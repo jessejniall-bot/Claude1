@@ -267,6 +267,34 @@
 
   SC.SupabaseLite = SupabaseLite;
 
+  // Turn a raw auth error into plain-language, actionable guidance.
+  SC.friendlyAuthError = function (e) {
+    var msg = String((e && e.message) || e || "");
+    var low = msg.toLowerCase();
+    if (low.indexOf("email not confirmed") !== -1 || low.indexOf("not confirmed") !== -1) {
+      return "Your account exists but its email isn't confirmed, so sign-in is blocked. " +
+        "Easiest fix: in Supabase go to Authentication → Sign In / Providers → Email, turn " +
+        "OFF \"Confirm email\", then sign in again here. (Supabase's free email sender is " +
+        "rate-limited, which is why the confirmation email may never have arrived.)";
+    }
+    if (low.indexOf("invalid login") !== -1 || low.indexOf("invalid_grant") !== -1 ||
+        low.indexOf("invalid credentials") !== -1) {
+      return "Wrong email or password. If you never received a confirmation email, your " +
+        "account may be stuck unconfirmed — turn off \"Confirm email\" in Supabase " +
+        "(Authentication → Sign In / Providers → Email) and try again.";
+    }
+    if (low.indexOf("rate limit") !== -1 || low.indexOf("too many") !== -1 ||
+        low.indexOf("429") !== -1) {
+      return "Supabase is rate-limiting sign-up emails (its free sender allows only a few " +
+        "per hour). Turn off \"Confirm email\" in Supabase (Authentication → Sign In / " +
+        "Providers → Email) so no email is needed, then try again.";
+    }
+    if (low.indexOf("failed to fetch") !== -1 || low.indexOf("networkerror") !== -1) {
+      return "Couldn't reach your Supabase project. Check the backend URL/key in Settings.";
+    }
+    return msg || "Something went wrong.";
+  };
+
   // Convenience: build a client from stored config, or null if unconfigured.
   SC.getClient = async function () {
     var cfg = await SC.loadConfig();

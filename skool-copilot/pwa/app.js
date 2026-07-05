@@ -32,7 +32,9 @@
       navigator.serviceWorker.register("sw.js").catch(function () {});
     }
     wireStaticHandlers();
-    // connect.js runs at document_idle, after us — check again shortly.
+    // connect.js runs at document_idle, after us. Update the instant it
+    // announces itself, and re-check on a couple of timers as a fallback.
+    document.addEventListener("sc-extension-ready", renderExtensionStatus);
     setTimeout(renderExtensionStatus, 600);
     setTimeout(renderExtensionStatus, 2500);
     if (await SC.isDemo()) {
@@ -756,7 +758,11 @@
         if (isSignUp) {
           await state.client.signUp(email, password);
           if (!(await state.client.ensureSession())) {
-            $("auth-error").textContent = "Account created — confirm your email, then sign in.";
+            $("auth-error").textContent =
+              "Account created, but Supabase wants an email confirmation. Its free " +
+              "email sender is rate-limited, so the easiest fix is to turn confirmation " +
+              "OFF: in Supabase go to Authentication → Sign In / Providers → Email and " +
+              "switch off \"Confirm email\", then sign in here. (No email needed after that.)";
             return;
           }
         } else {
@@ -767,7 +773,7 @@
         if (!state.communities.length) show("view-setup");
         else { location.hash = "#/dashboard"; route(); }
       } catch (e) {
-        $("auth-error").textContent = String((e && e.message) || e);
+        $("auth-error").textContent = SC.friendlyAuthError(e);
       }
     }
 

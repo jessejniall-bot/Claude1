@@ -44,22 +44,35 @@ deep-review buttons make real calls even in demo mode.
 ### 1. Backend (once, ~2 min)
 
 1. Create a free project at [supabase.com/dashboard](https://supabase.com/dashboard).
-2. In the web app's setup screen, click **📋 Copy schema SQL**, then in
+2. **Turn off email confirmation** (do this first — it saves a lot of pain).
+   Supabase's free email sender only allows a few confirmation emails per hour,
+   and an unconfirmed account can't sign in. In Supabase go to
+   **Authentication → Sign In / Providers → Email** and switch **off**
+   "Confirm email", then **Save**. Now sign-up is instant, no email needed.
+   *(Already created an account that's stuck? Authentication → Users → click it
+   → Confirm — or just delete it and sign up again after flipping the toggle.)*
+3. In the web app's setup screen, click **📋 Copy schema SQL**, then in
    Supabase open **SQL Editor**, paste, **Run**.
-3. In Supabase, open **Settings → API** and copy the **Project URL** and the
+4. In Supabase, open **Settings → API** and copy the **Project URL** and the
    **anon public key** into the web app's setup screen. The app verifies them
    and tells you exactly what's wrong if something doesn't match (bad URL,
    wrong key, schema not installed).
-4. Create your account, add your community (name + Skool URL + the ownership
+5. Create your account, add your community (name + Skool URL + the ownership
    checkbox), paste an AI key in Settings. Done with the web side.
 
 ### 2. Extension (once, ~2 min)
 
-1. Get the code: `git clone` this repo (or GitHub → Code → Download ZIP and
-   unzip).
+1. Get the code. **Important: the code lives on the
+   `claude/fable-5-skool-copilot-q2605p` branch, not `main`** — a plain
+   "Download ZIP" from the repo's front page gives you an empty `main` and the
+   extension won't be there. Use the direct branch download instead:
+   **https://github.com/jessejniall-bot/Claude1/archive/refs/heads/claude/fable-5-skool-copilot-q2605p.zip**
+   Then unzip it (Mac: double-click; Windows: right-click → Extract All).
 2. Open `chrome://extensions`, turn on **Developer mode** (top right), click
-   **Load unpacked**, and select the **`skool-copilot/extension`** folder —
-   that exact folder, not the repo root.
+   **Load unpacked**, and select the **`skool-copilot/extension`** folder
+   *inside* the unzipped folder — that exact folder, not the repo root.
+   *(After downloading a newer copy, click the ↻ reload icon on the extension
+   card so Chrome picks up the changes.)*
 3. **Open the web app once** (the URL from Path A) — with the extension
    installed, your backend + AI settings sync into the extension
    automatically. The web app shows "🧩 Extension detected" when this works.
