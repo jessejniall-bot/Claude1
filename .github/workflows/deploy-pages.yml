@@ -1,8 +1,13 @@
 name: Deploy Skool Copilot PWA to GitHub Pages
 
+# Note: deploys run from the feature branch only. The github-pages
+# environment's protection rules were auto-created allowing this branch
+# (the first deployer); pushes from main get rejected in ~2s and, worse,
+# the concurrency group makes them cancel in-flight branch deploys.
+# main stays the code source of truth; it's kept in sync with this branch.
 on:
   push:
-    branches: [main, master, claude/fable-5-skool-copilot-q2605p]
+    branches: [claude/fable-5-skool-copilot-q2605p]
     paths:
       - "skool-copilot/**"
       - ".github/workflows/deploy-pages.yml"

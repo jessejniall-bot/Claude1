@@ -1,5 +1,5 @@
 /* Skool Community Copilot — PWA service worker (app-shell cache) */
-var CACHE = "sc-shell-v6";
+var CACHE = "sc-shell-v7";
 var SHELL = [
   "./index.html",
   "./styles.css",
@@ -40,14 +40,25 @@ self.addEventListener("activate", function (event) {
   );
 });
 
-// Cache-first for the shell; everything else (Supabase, AI providers)
-// always goes to the network.
+// Network-first for the shell so deploys show up on the next normal
+// reload; the cache is the offline fallback. Cross-origin requests
+// (Supabase, AI providers) are never intercepted.
 self.addEventListener("fetch", function (event) {
   var url = new URL(event.request.url);
   if (event.request.method !== "GET" || url.origin !== location.origin) return;
   event.respondWith(
-    caches.match(event.request).then(function (cached) {
-      return cached || fetch(event.request);
-    })
+    fetch(event.request)
+      .then(function (res) {
+        if (res && res.ok) {
+          var copy = res.clone();
+          caches.open(CACHE).then(function (cache) {
+            cache.put(event.request, copy);
+          });
+        }
+        return res;
+      })
+      .catch(function () {
+        return caches.match(event.request);
+      })
   );
 });
