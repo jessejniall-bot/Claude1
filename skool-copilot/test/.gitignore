@@ -1,0 +1,4 @@
+e2e-*.png
+node_modules/
+package.json
+package-lock.json

@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "Skool Community Copilot",
+  "version": "0.2.0",
+  "description": "Scans your own Skool community's feed for content health and drafts on-pillar, on-voice posts with your own AI key.",
+  "permissions": ["storage", "alarms", "sidePanel", "tabs"],
+  "host_permissions": [
+    "https://www.skool.com/*",
+    "https://*.supabase.co/*",
+    "https://api.anthropic.com/*",
+    "https://api.openai.com/*",
+    "https://generativelanguage.googleapis.com/*",
+    "https://api.x.ai/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.skool.com/*"],
+      "js": [
+        "shared/config.js",
+        "shared/pillar-classifier.js",
+        "content/scraper.js"
+      ],
+      "css": ["content/capture.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://jessejniall-bot.github.io/*",
+        "http://localhost:8080/*",
+        "http://127.0.0.1:8080/*"
+      ],
+      "js": ["content/connect.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Skool Community Copilot — open side panel"
+  },
+  "side_panel": {
+    "default_path": "sidepanel/sidepanel.html"
+  },
+  "options_page": "options/options.html"
+}

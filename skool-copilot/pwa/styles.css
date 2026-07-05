@@ -1,0 +1,309 @@
+/* =====================================================================
+   Skool Community Copilot — PWA styles
+   Palette roles follow the validated reference palette: chart series,
+   status colors, and ink tokens are defined once per color scheme.
+   ===================================================================== */
+
+:root {
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --card: #ffffff;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --line: #e1e0d9;
+  --baseline: #c3c2b7;
+  --series-1: #2a78d6;
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --up: #006300;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --card: #232322;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --line: #2c2c2a;
+    --baseline: #383835;
+    --series-1: #3987e5;
+    --up: #0ca30c;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.hidden { display: none !important; }
+.sep { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
+.steps { padding-left: 20px; margin: 8px 0 12px; }
+.steps li { margin-bottom: 6px; }
+.steps a { color: var(--series-1); }
+.muted { color: var(--muted); font-size: 13px; }
+.error { color: var(--critical); font-size: 13px; min-height: 1em; }
+
+/* ------------------------------ layout ----------------------------- */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand { font-weight: 700; }
+
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.tabs a {
+  padding: 6px 10px;
+  border-radius: 8px;
+  color: var(--ink-2);
+  text-decoration: none;
+  font-size: 14px;
+}
+.tabs a.active { background: var(--series-1); color: #fff; }
+.tabs a:hover:not(.active) { background: var(--line); }
+
+.picker {
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  max-width: 220px;
+}
+
+#app { max-width: 960px; margin: 0 auto; padding: 16px; }
+
+.view > .card { margin-bottom: 16px; }
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+@media (max-width: 720px) { .grid-2 { grid-template-columns: 1fr; } }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+}
+.card.narrow { max-width: 440px; margin: 40px auto; }
+.card h2 { margin: 0 0 10px; font-size: 18px; }
+.card h3 {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ------------------------------ forms ------------------------------ */
+
+.field { display: block; font-size: 13px; color: var(--ink-2); margin-bottom: 10px; }
+.check { display: flex; align-items: center; gap: 8px; font-size: 13.5px; margin: 10px 0; }
+.check input { width: auto; margin: 0; }
+
+input, textarea, select {
+  width: 100%;
+  margin-top: 4px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+textarea { resize: vertical; }
+
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+.row input { margin-top: 0; flex: 1; }
+
+.btn {
+  padding: 9px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink);
+  font: 600 14px/1 system-ui, sans-serif;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn.primary { background: var(--series-1); border-color: var(--series-1); color: #fff; }
+.btn.danger { color: var(--critical); border-color: var(--critical); }
+.btn.small { padding: 5px 9px; font-size: 12.5px; }
+.btn:hover { filter: brightness(1.06); }
+.btn:disabled { opacity: 0.5; cursor: default; }
+
+/* --------------------------- health score -------------------------- */
+
+.score-card { margin-bottom: 16px; }
+.score-hero {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.score-num { font-size: 52px; font-weight: 800; line-height: 1; }
+.score-num.good { color: var(--up); }
+.score-num.warning { color: var(--warning); }
+.score-num.critical { color: var(--critical); }
+.score-verdict { font-size: 14px; font-weight: 600; color: var(--ink-2); margin-top: 4px; }
+
+.score-parts { flex: 1; min-width: 220px; }
+.score-part { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+.score-part .n { width: 130px; font-size: 12px; color: var(--ink-2); }
+.score-part .track {
+  flex: 1;
+  display: block;
+  height: 8px;
+  background: var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.score-part .fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--series-1);
+}
+.score-part .v { width: 30px; text-align: right; font-size: 12px; font-weight: 600; }
+
+/* --------------------------- AI deep review ------------------------ */
+
+.analysis {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  white-space: pre-wrap;
+  font-size: 13.5px;
+}
+.analysis.loading { color: var(--muted); }
+
+/* ------------------------- generator options ----------------------- */
+
+.gen-options { align-items: flex-end; }
+.inline-field { font-size: 12.5px; color: var(--ink-2); }
+.inline-field select { width: auto; margin-top: 4px; display: block; }
+
+/* ---------------------------- stat tiles --------------------------- */
+
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+@media (max-width: 720px) { .stat-row { grid-template-columns: repeat(2, 1fr); } }
+
+.stat {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.stat .v { font-size: 24px; font-weight: 700; }
+.stat .v .up { color: var(--up); }
+.stat .v .down { color: var(--critical); }
+.stat .l { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+/* ------------------------------ charts ----------------------------- */
+
+.chart-slot, .sc-chart { position: relative; min-height: 120px; }
+
+.sc-tooltip {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  background: var(--ink);
+  color: var(--card);
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 6px 9px;
+  border-radius: 8px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+  white-space: nowrap;
+  z-index: 5;
+}
+
+/* ------------------------------ lists ------------------------------ */
+
+.flags, .plain-list { list-style: none; margin: 0; padding: 0; }
+.flags li {
+  position: relative;
+  padding: 8px 4px 8px 22px;
+  border-top: 1px solid var(--line);
+  font-size: 13.5px;
+}
+.flags li:first-child { border-top: none; }
+.flags li::before { content: "●"; position: absolute; left: 4px; }
+.flags li.good::before { color: var(--good); }
+.flags li.warning::before { color: var(--warning); }
+.flags li.serious::before { color: var(--serious); }
+.flags li.critical::before { color: var(--critical); }
+
+.plain-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 2px;
+  border-top: 1px solid var(--line);
+  font-size: 13.5px;
+}
+.plain-list li:first-child { border-top: none; }
+.plain-list .grow { flex: 1; min-width: 0; }
+.plain-list .meta { color: var(--muted); font-size: 12px; }
+
+/* ------------------------------ drafts ----------------------------- */
+
+.draft-card { margin-bottom: 14px; }
+.draft-card .status {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+}
+.draft-card .status.ready { color: var(--up); border-color: var(--up); }
+.draft-card .status.posted { color: var(--muted); }
+
+/* --------------------------- pillar editor ------------------------- */
+
+.pillar-row {
+  display: grid;
+  grid-template-columns: 1.2fr 2fr 76px 32px;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.pillar-row input { margin-top: 0; }
+@media (max-width: 720px) { .pillar-row { grid-template-columns: 1fr 1fr 64px 32px; } }

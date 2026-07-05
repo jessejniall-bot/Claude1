@@ -1,3 +1,17 @@
+# Skool Tools
+
+Two projects live in this repo:
+
+- **Skool Prompt Forge** (repo root) — a zero-dependency generator for
+  engagement-ready Skool posts about Google Gemini. Docs below.
+- **[Skool Community Copilot](skool-copilot/README.md)** (`skool-copilot/`) —
+  a Chrome extension + companion PWA that scans any Skool community you own,
+  measures content health, and drafts on-pillar, on-voice posts with your own
+  AI key (Anthropic / OpenAI / Gemini / Grok). Supabase backend, multi-tenant,
+  BYOK.
+
+---
+
 # Skool Prompt Forge 🔥
 
 A zero-dependency web app that generates **engagement-ready Skool posts about Google Gemini**.

@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Skool Community Copilot</title>
+  <meta name="description" content="Content health dashboard and on-voice draft generator for your Skool community." />
+  <meta name="theme-color" content="#2a78d6" />
+  <meta name="sc-copilot" content="pwa" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">🧭 Skool Copilot</div>
+    <select id="community-picker" class="picker hidden"></select>
+    <nav id="tabs" class="tabs hidden">
+      <a href="#/dashboard">Dashboard</a>
+      <a href="#/ideas">Ideas</a>
+      <a href="#/drafts">Drafts</a>
+      <a href="#/queue">Queue</a>
+      <a href="#/settings">Settings</a>
+    </nav>
+  </header>
+
+  <main id="app">
+    <!-- Backend not configured -->
+    <section id="view-configure" class="view hidden">
+      <div class="card narrow">
+        <h2>Connect your backend</h2>
+        <p class="muted">
+          Copilot stores data in <strong>your own</strong> Supabase project
+          (free tier is fine):
+        </p>
+        <ol class="muted steps">
+          <li>Create a project at <a href="https://supabase.com/dashboard" target="_blank" rel="noopener">supabase.com</a></li>
+          <li><button id="cfg-copy-schema" class="btn small" type="button">📋 Copy schema SQL</button>
+              then paste &amp; run it in the project's <em>SQL Editor</em></li>
+          <li>Copy the URL + anon key from <em>Settings → API</em> into the fields below</li>
+        </ol>
+        <p id="ext-status-cfg" class="muted"></p>
+        <label class="field">Project URL
+          <input id="cfg-url" type="url" placeholder="https://xxxx.supabase.co" />
+        </label>
+        <label class="field">Anon (public) key
+          <input id="cfg-key" type="password" placeholder="eyJ..." />
+        </label>
+        <button id="cfg-save" class="btn primary" type="button">Save & continue</button>
+        <p id="cfg-error" class="error"></p>
+        <hr class="sep" />
+        <p class="muted">No backend yet? Explore everything with sample data —
+        no account, no keys. Your drafts and edits persist in this browser.</p>
+        <button id="demo-go" class="btn" type="button">🎪 Try the demo</button>
+      </div>
+    </section>
+
+    <!-- Auth -->
+    <section id="view-auth" class="view hidden">
+      <div class="card narrow">
+        <h2>Sign in</h2>
+        <label class="field">Email <input id="auth-email" type="email" autocomplete="email" /></label>
+        <label class="field">Password <input id="auth-password" type="password" autocomplete="current-password" /></label>
+        <div class="row">
+          <button id="auth-signin" class="btn primary" type="button">Sign in</button>
+          <button id="auth-signup" class="btn" type="button">Create account</button>
+        </div>
+        <p id="auth-error" class="error"></p>
+      </div>
+    </section>
+
+    <!-- First community setup -->
+    <section id="view-setup" class="view hidden">
+      <div class="card narrow">
+        <h2>Add your community</h2>
+        <p class="muted">
+          Copilot only works with communities you own or admin. The extension
+          verifies admin access live on every pageview before scraping anything.
+        </p>
+        <label class="field">Community name
+          <input id="setup-name" type="text" placeholder="My Community" />
+        </label>
+        <label class="field">Skool URL
+          <input id="setup-url" type="url" placeholder="https://www.skool.com/my-community" />
+        </label>
+        <label class="check">
+          <input id="setup-own" type="checkbox" />
+          I own or admin this Skool community
+        </label>
+        <button id="setup-save" class="btn primary" type="button">Add community</button>
+        <p id="setup-error" class="error"></p>
+        <p class="muted">Default pillars and an empty voice profile are seeded automatically — edit both in Settings.</p>
+      </div>
+    </section>
+
+    <!-- Dashboard -->
+    <section id="view-dashboard" class="view hidden">
+      <div id="dash-empty" class="card hidden">
+        <p class="muted">No scraped posts yet. Install the extension, sign in from its side panel,
+        then browse your community — the feed syncs automatically once admin access is confirmed.</p>
+      </div>
+
+      <div class="card score-card">
+        <div class="score-hero">
+          <div>
+            <div id="score-total" class="score-num">—</div>
+            <div id="score-label" class="score-verdict"></div>
+          </div>
+          <div id="score-components" class="score-parts"></div>
+        </div>
+      </div>
+
+      <div id="dash-stats" class="stat-row"></div>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Engagement per post — weekly</h3>
+          <div id="chart-engagement" class="chart-slot"></div>
+        </div>
+        <div class="card">
+          <h3>Pillar balance — last 30 days</h3>
+          <div id="chart-pillars" class="chart-slot"></div>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Health flags</h3>
+          <ul id="dash-flags" class="flags"></ul>
+        </div>
+        <div class="card">
+          <h3>Gone quiet</h3>
+          <ul id="dash-dormant" class="plain-list"></ul>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Where to improve</h3>
+        <ul id="dash-improvements" class="flags"></ul>
+        <div class="row" style="margin-top:10px">
+          <button id="analyze-go" class="btn" type="button">🔍 AI deep review (reads your comments)</button>
+        </div>
+        <p id="analyze-error" class="error"></p>
+        <div id="analyze-output" class="analysis hidden"></div>
+      </div>
+
+      <div class="card">
+        <h3>Draft the next post</h3>
+        <p id="gen-overdue" class="muted"></p>
+        <label class="field">Optional seed
+          <textarea id="gen-seed" rows="3" placeholder="A member comment, a health flag, or a note — or leave empty"></textarea>
+        </label>
+        <div class="row gen-options">
+          <label class="inline-field">Length
+            <select id="gen-length">
+              <option value="500" selected>Short (≤500 chars)</option>
+              <option value="900">Medium (≤900 chars)</option>
+            </select>
+          </label>
+          <label class="inline-field">Emojis
+            <select id="gen-emoji">
+              <option value="auto" selected>If helpful</option>
+              <option value="none">None</option>
+            </select>
+          </label>
+          <label class="check" style="margin:0">
+            <input id="gen-unicode" type="checkbox" checked />
+            𝗕𝗼𝗹𝗱 title (Unicode)
+          </label>
+        </div>
+        <div class="row">
+          <button id="gen-go" class="btn primary" type="button">⚡ Generate draft</button>
+        </div>
+        <p id="gen-error" class="error"></p>
+        <div id="gen-result" class="hidden">
+          <label class="field">Title <input id="gen-title" type="text" /></label>
+          <label class="field">Body <textarea id="gen-body" rows="12"></textarea></label>
+          <div class="row">
+            <button id="gen-bold" class="btn small" type="button" title="Unicode-bold the selected text (or the whole field)">𝗕 Bold selection</button>
+            <span id="gen-count" class="meta"></span>
+          </div>
+          <div class="row">
+            <button id="gen-copy" class="btn" type="button">📋 Copy</button>
+            <button id="gen-save" class="btn primary" type="button">💾 Save to drafts</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Ideas -->
+    <section id="view-ideas" class="view hidden">
+      <div class="card">
+        <h3>New idea</h3>
+        <div class="row">
+          <input id="idea-input" type="text" placeholder="Post idea…" />
+          <button id="idea-add" class="btn primary" type="button">Add</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Idea inbox</h3>
+        <ul id="ideas-list" class="plain-list"></ul>
+      </div>
+    </section>
+
+    <!-- Drafts -->
+    <section id="view-drafts" class="view hidden">
+      <div id="drafts-list"></div>
+    </section>
+
+    <!-- Queue -->
+    <section id="view-queue" class="view hidden">
+      <div class="card">
+        <p class="muted">Skool has no posting API — the queue is your copy-paste schedule.</p>
+        <ul id="queue-list" class="plain-list"></ul>
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section id="view-settings" class="view hidden">
+      <div class="card">
+        <h3>AI provider (bring your own key)</h3>
+        <p class="muted">Keys are encrypted with a device key and stay in this browser. Generation calls go straight to the provider.</p>
+        <div class="grid-2">
+          <label class="field">Provider <select id="set-provider"></select></label>
+          <label class="field">Model <select id="set-model"></select></label>
+        </div>
+        <label class="field">API key <input id="set-api-key" type="password" /></label>
+        <div class="row">
+          <button id="set-test" class="btn" type="button">Test connection</button>
+          <button id="set-save-ai" class="btn primary" type="button">Save key</button>
+        </div>
+        <p id="set-ai-status" class="muted"></p>
+      </div>
+
+      <div class="card">
+        <h3>Pillars</h3>
+        <div id="pillars-editor"></div>
+        <div class="row">
+          <button id="pillar-add" class="btn" type="button">+ Add pillar</button>
+          <button id="pillars-save" class="btn primary" type="button">Save pillars</button>
+        </div>
+        <p id="pillars-status" class="muted"></p>
+      </div>
+
+      <div class="card">
+        <h3>Voice profile</h3>
+        <label class="field">Tone notes
+          <textarea id="voice-tone" rows="3" placeholder="e.g. Direct, warm, no corporate speak. Short sentences."></textarea>
+        </label>
+        <label class="field">Banned words (comma separated)
+          <input id="voice-banned" type="text" placeholder="synergy, guys, hack" />
+        </label>
+        <label class="field">Formatting rules
+          <textarea id="voice-format" rows="3" placeholder="e.g. Title case headlines. One emoji max. Always end with a question."></textarea>
+        </label>
+        <button id="voice-save" class="btn primary" type="button">Save voice</button>
+        <p id="voice-status" class="muted"></p>
+      </div>
+
+      <div class="card">
+        <h3>Communities</h3>
+        <ul id="communities-list" class="plain-list"></ul>
+        <button id="community-add" class="btn" type="button">+ Add another community</button>
+      </div>
+
+      <div class="card">
+        <h3>Backend & account</h3>
+        <p id="ext-status-set" class="muted"></p>
+        <label class="field">Supabase URL <input id="set-supabase-url" type="url" /></label>
+        <label class="field">Supabase anon key <input id="set-supabase-key" type="password" /></label>
+        <div class="row">
+          <button id="set-save-backend" class="btn" type="button">Save backend</button>
+          <button id="auth-signout" class="btn danger" type="button">Sign out</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="../extension/shared/config.js"></script>
+  <script src="../extension/shared/supabase-lite.js"></script>
+  <script src="../extension/shared/key-vault.js"></script>
+  <script src="../extension/shared/ai-providers.js"></script>
+  <script src="../extension/shared/health-engine.js"></script>
+  <script src="../extension/shared/unicode-style.js"></script>
+  <script src="../extension/shared/default-pillars.js"></script>
+  <script src="../extension/shared/demo-data.js"></script>
+  <script src="charts.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

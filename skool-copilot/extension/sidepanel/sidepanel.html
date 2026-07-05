@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Skool Community Copilot</title>
+  <link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body>
+  <header class="sp-header">
+    <h1>Skool Copilot</h1>
+    <button id="sp-settings" class="link" type="button">Settings</button>
+  </header>
+
+  <!-- Not configured / not signed in -->
+  <section id="sp-auth" class="card hidden">
+    <p id="sp-auth-note" class="muted"></p>
+    <label>Email <input id="sp-email" type="email" autocomplete="email" /></label>
+    <label>Password <input id="sp-password" type="password" autocomplete="current-password" /></label>
+    <div class="row">
+      <button id="sp-signin" class="btn primary" type="button">Sign in</button>
+      <button id="sp-signup" class="btn" type="button">Sign up</button>
+    </div>
+    <p id="sp-auth-error" class="error"></p>
+  </section>
+
+  <!-- Main -->
+  <main id="sp-main" class="hidden">
+    <label class="field">
+      Community
+      <select id="sp-community"></select>
+    </label>
+
+    <!-- Shown when the account has no communities yet -->
+    <section id="sp-add" class="card hidden">
+      <h2>Add your community</h2>
+      <p class="muted">Copilot only works with communities you own or admin —
+        it re-verifies admin access on every pageview before scraping.</p>
+      <label class="field">Name
+        <input id="sp-add-name" type="text" placeholder="My Community" />
+      </label>
+      <label class="field">Skool URL
+        <input id="sp-add-url" type="url" placeholder="https://www.skool.com/my-community" />
+      </label>
+      <label class="check-row">
+        <input id="sp-add-own" type="checkbox" />
+        I own or admin this community
+      </label>
+      <button id="sp-add-save" class="btn primary" type="button">Add community</button>
+      <p id="sp-add-error" class="error"></p>
+    </section>
+
+    <section class="card" id="sp-health">
+      <h2>Health</h2>
+      <div id="sp-score" class="score-line"></div>
+      <div id="sp-stats" class="stats"></div>
+      <ul id="sp-flags" class="flags"></ul>
+    </section>
+
+    <section class="card">
+      <h2>Draft the next post</h2>
+      <p id="sp-overdue" class="muted"></p>
+      <label class="field">
+        Optional seed (comment, flag, or note)
+        <textarea id="sp-seed" rows="3" placeholder="Leave empty to just fill the overdue pillar"></textarea>
+      </label>
+      <label class="check-row">
+        <input id="sp-unicode" type="checkbox" checked />
+        𝗕𝗼𝗹𝗱 title (Unicode)
+      </label>
+      <button id="sp-generate" class="btn primary" type="button">⚡ Generate draft</button>
+      <p id="sp-gen-error" class="error"></p>
+
+      <div id="sp-draft" class="hidden">
+        <label class="field">Title <input id="sp-draft-title" type="text" /></label>
+        <label class="field">Body <textarea id="sp-draft-body" rows="10"></textarea></label>
+        <div class="row">
+          <button id="sp-copy" class="btn" type="button">📋 Copy</button>
+          <button id="sp-save" class="btn" type="button">💾 Save draft</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="../shared/config.js"></script>
+  <script src="../shared/supabase-lite.js"></script>
+  <script src="../shared/key-vault.js"></script>
+  <script src="../shared/ai-providers.js"></script>
+  <script src="../shared/health-engine.js"></script>
+  <script src="../shared/unicode-style.js"></script>
+  <script src="sidepanel.js"></script>
+</body>
+</html>
