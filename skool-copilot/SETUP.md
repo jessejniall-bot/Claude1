@@ -40,6 +40,17 @@ deep-review buttons make real calls even in demo mode.
 5. Create your account, add your community (name + Skool URL + the ownership
    checkbox), paste an AI key in Settings. Done with the web side.
 
+**Don't want accounts at all?** Use **solo mode** — it removes the sign-in
+screen from both the app and the extension (meant for a personal,
+single-user setup). On the sign-in screen: click **📋 Copy solo-mode SQL**,
+run it once in Supabase → SQL Editor, then click **🔓 Enable solo mode**.
+After that there is no sign-in anywhere; the extension picks the setting up
+automatically the next time you open the web app. ⚠️ Trade-off: anyone with
+your project URL + anon key could then read/write your data, so don't share
+those two values. (This also sidesteps every email-confirmation headache.)
+To go back to accounts later, the revert SQL is at the bottom of
+`supabase/solo-mode.sql`.
+
 ### 2. Extension (once, ~2 min)
 
 1. Get the code: on the repo's front page

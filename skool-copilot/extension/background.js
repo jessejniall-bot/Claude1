@@ -46,7 +46,7 @@ async function refreshCommunities() {
   var client = await SC.getClient();
   if (!client) return null;
   var user = await client.getUser();
-  if (!user) return null;
+  if (!user && !(await SC.isSolo())) return null; // solo mode needs no session
   var rows = await client
     .from("communities")
     .select("id,skool_url,slug,name")
@@ -77,7 +77,8 @@ async function handleGetCommunityState(msg) {
   var client = await SC.getClient();
   if (!client) return { configured: false, signedIn: false, allowed: false };
   var user = await client.getUser();
-  if (!user) return { configured: true, signedIn: false, allowed: false };
+  var solo = await SC.isSolo();
+  if (!user && !solo) return { configured: true, signedIn: false, allowed: false };
   var communities = await getCommunities();
   var community = findCommunity(communities, msg.slug);
   return {

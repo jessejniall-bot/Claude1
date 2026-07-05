@@ -66,6 +66,16 @@
           <button id="auth-signup" class="btn" type="button">Create account</button>
         </div>
         <p id="auth-error" class="error"></p>
+        <hr class="sep" />
+        <p class="muted"><strong>Don't want accounts?</strong> Solo mode removes the
+        sign-in screen everywhere (app and extension). It's meant for a personal,
+        single-user setup: one-time step, then never again —</p>
+        <ol class="muted steps">
+          <li><button id="solo-copy-sql" class="btn small" type="button">📋 Copy solo-mode SQL</button></li>
+          <li>Paste &amp; <em>Run</em> it in Supabase → <em>SQL Editor</em></li>
+          <li><button id="solo-enable" class="btn small" type="button">🔓 Enable solo mode</button></li>
+        </ol>
+        <p id="solo-status" class="muted"></p>
       </div>
     </section>
 
