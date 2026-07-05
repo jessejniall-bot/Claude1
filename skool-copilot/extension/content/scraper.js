@@ -27,6 +27,7 @@
     slug: null,
     allowed: false,
     admin: false,
+    override: false, // manual "I admin this" switch from the side panel
     active: false,
     communityName: null,
     lastSyncAt: null,
@@ -159,13 +160,15 @@
     }
     if (state.active) {
       cls = "sc-active";
-      text = "Copilot active — admin access confirmed";
+      text = state.admin
+        ? "Copilot active — admin access confirmed"
+        : "Copilot active — manual admin override";
       if (state.syncedPosts || state.syncedComments) {
         text += " · " + state.syncedPosts + "p / " + state.syncedComments + "c synced";
       }
     } else if (state.allowed && !state.admin) {
       cls = "sc-inactive";
-      text = "No admin access detected — Copilot inactive";
+      text = "No admin access detected — Copilot inactive (side panel has a force-enable switch)";
     } else {
       cls = "sc-idle";
       text = "Copilot inactive — community not in your allowlist";
@@ -175,6 +178,7 @@
     pill.title = "slug: " + state.slug +
       " | allowlisted: " + state.allowed +
       " | admin signal: " + (state.adminSignal || "none") +
+      " | manual override: " + state.override +
       " | synced this visit: " + state.syncedPosts + " posts, " +
       state.syncedComments + " comments";
     pill.style.display = "block";
@@ -469,16 +473,56 @@
     if (slug) {
       var res = await sendMessage({ type: "GET_COMMUNITY_STATE", slug: slug });
       state.allowed = !!(res && res.allowed);
+      state.override = !!(res && res.override);
       state.communityName = res ? res.communityName : null;
-      // Admin check runs on every pageview — both checks must pass.
+      // Admin check runs on every pageview. The allowlist is always
+      // required; the live admin signal can be replaced by the user's
+      // explicit per-community override when Skool's markup changes.
       state.admin = detectAdminSignal(slug);
-      state.active = state.allowed && state.admin;
+      state.active = state.allowed && (state.admin || state.override);
     }
 
     renderPill();
     renderFab();
     if (state.active) scheduleScrape();
   }
+
+  // Calibration helper: run SC_COPILOT_DIAGNOSE() in the page console and
+  // share the output to tune admin detection for Skool's current markup.
+  // It reports structure only — role values, JSON paths, and slug-related
+  // link hrefs — not post contents.
+  window.SC_COPILOT_DIAGNOSE = function () {
+    var out = { slug: state.slug, allowed: state.allowed, adminSignal: state.adminSignal,
+      override: state.override, roles: [], links: [] };
+    var data = readNextData();
+    if (data) {
+      var seen = 0;
+      (function walk(obj, path) {
+        if (!obj || typeof obj !== "object" || seen > 40) return;
+        for (var k in obj) {
+          if (!Object.prototype.hasOwnProperty.call(obj, k)) continue;
+          var v = obj[k];
+          if (/role/i.test(k) && (typeof v === "string" || typeof v === "number")) {
+            out.roles.push(path + "." + k + " = " + v);
+            seen++;
+          }
+          if (v && typeof v === "object") walk(v, path + "." + k);
+        }
+      })(data, "$");
+    } else {
+      out.roles.push("(no __NEXT_DATA__ found on this page)");
+    }
+    document.querySelectorAll("a[href]").forEach(function (a) {
+      var h = a.getAttribute("href") || "";
+      if (state.slug && h.indexOf(state.slug) !== -1 &&
+          /settings|admin|manage|dashboard|-\//i.test(h) && out.links.length < 20) {
+        out.links.push(h + "  (text: " + (a.textContent || "").trim().slice(0, 40) + ")");
+      }
+    });
+    console.log("=== Skool Copilot diagnostics — paste this back ===");
+    console.log(JSON.stringify(out, null, 2));
+    return out;
+  };
 
   // Re-evaluate on SPA navigations (Next.js router) and feed mutations.
   var lastHref = location.href;

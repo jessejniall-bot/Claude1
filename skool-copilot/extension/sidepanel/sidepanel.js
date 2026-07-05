@@ -119,6 +119,11 @@
   async function selectCommunity(id) {
     current = communities.find(function (c) { return c.id === id; }) || null;
     if (!current) return;
+    // Manual admin-override switch for this community.
+    var slug = current.slug || SC.skoolSlug(current.skool_url);
+    var overrides = (await SC.storage.get("sc_admin_override")) || {};
+    $("sp-override-row").classList.remove("hidden");
+    $("sp-override").checked = !!overrides[slug];
     var results = await Promise.all([
       client.from("pillars").select("*").eq("community_id", id).order("position"),
       client.from("scraped_posts").select("*").eq("community_id", id)
@@ -333,6 +338,16 @@
   $("sp-copy").addEventListener("click", copyDraft);
   $("sp-save").addEventListener("click", saveDraft);
   $("sp-add-save").addEventListener("click", addCommunity);
+  $("sp-override").addEventListener("change", async function (e) {
+    if (!current) return;
+    var slug = current.slug || SC.skoolSlug(current.skool_url);
+    var overrides = (await SC.storage.get("sc_admin_override")) || {};
+    if (e.target.checked) overrides[slug] = true;
+    else delete overrides[slug];
+    await SC.storage.set("sc_admin_override", overrides);
+    // Takes effect on the community's next pageview — prompt a reload.
+    e.target.parentElement.title = "Saved — reload your Skool tab to apply.";
+  });
 
   boot();
 })();

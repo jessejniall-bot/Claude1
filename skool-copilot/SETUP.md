@@ -90,6 +90,14 @@ Health dashboard + drafting live in the side panel and the web app.
   not configured / sign-in needed / exact error). Follow what it says.
 - **"Test backend" fails** — the message tells you which of the three inputs
   is wrong: unreachable URL, rejected anon key, or schema not installed.
+- **"No admin access detected" on a community you DO admin** — Skool's
+  markup changed and automatic detection missed it. Open the side panel,
+  select the community, and tick **"Force-enable scraping here"**, then
+  reload the Skool tab — the pill turns green ("manual admin override").
+  The allowlist + ownership pledge still apply. To help fix detection
+  properly, run `SC_COPILOT_DIAGNOSE()` in the Skool page's console
+  (F12 → Console) and share the output — it reports page structure
+  (role fields and admin-ish links), not post contents.
 - **Pill stuck at 0 synced on a community you admin** — hover the pill: it
   shows which admin signal matched and the sync counters. Run
   `window.SC_COPILOT_DEBUG = true` in the page console for per-pass logs.

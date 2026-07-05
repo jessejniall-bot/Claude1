@@ -81,10 +81,14 @@ async function handleGetCommunityState(msg) {
   if (!user && !solo) return { configured: true, signedIn: false, allowed: false };
   var communities = await getCommunities();
   var community = findCommunity(communities, msg.slug);
+  // Manual admin override, set per community from the side panel for
+  // when Skool's markup changes and automatic detection fails.
+  var overrides = (await SC.storage.get("sc_admin_override")) || {};
   return {
     configured: true,
     signedIn: true,
     allowed: !!community,
+    override: !!overrides[SC.skoolSlug(msg.slug)],
     communityId: community ? community.id : null,
     communityName: community ? community.name : null,
   };
