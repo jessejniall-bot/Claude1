@@ -268,6 +268,77 @@
     return lines.join("\n");
   };
 
+  /* ------------------ page engagement suggestions ------------------ */
+  // "Read & suggest": given the posts currently on screen, recommend how
+  // the owner should engage with each — suggestion only, never automated.
+
+  SC.ENGAGE_SYSTEM_PROMPT =
+    "You are the engagement copilot for a Skool community owner. For each " +
+    "member post you are shown, you recommend how the owner should engage " +
+    "and, when a comment is warranted, you draft it in the owner's voice. " +
+    "Replies must sound like a human community owner: specific to the post, " +
+    "warm, short, never generic praise, never mentioning AI, no hashtags. " +
+    "You respond with raw JSON only — no prose, no code fences.";
+
+  // buildEngagementPrompt({communityName, voice, posts})
+  // posts: [{author, post_text, likes, comments}]
+  SC.buildEngagementPrompt = function (ctx) {
+    var voice = ctx.voice || {};
+    var lines = [];
+    lines.push("Community: " + (ctx.communityName || "my community"));
+    if (voice.tone_notes) lines.push("Owner's voice: " + voice.tone_notes);
+    if (voice.formatting_rules) lines.push("Formatting rules: " + voice.formatting_rules);
+    if (voice.banned_words && voice.banned_words.length) {
+      lines.push("Never use these words: " + voice.banned_words.join(", "));
+    }
+    lines.push("");
+    lines.push("Here are the posts currently on the owner's screen:");
+    (ctx.posts || []).forEach(function (p, i) {
+      lines.push("");
+      lines.push("POST " + (i + 1) + " — by " + (p.author || "a member") +
+        " (" + (p.likes || 0) + " likes, " + (p.comments || 0) + " comments):");
+      lines.push(String(p.post_text || "").replace(/\s+/g, " ").slice(0, 500));
+    });
+    lines.push("");
+    lines.push(
+      "For EACH post, decide the best engagement from the owner. Output ONLY a JSON " +
+      "array with one object per post, same order, using exactly these fields:\n" +
+      '  "post": the post number,\n' +
+      '  "action": one of "detailed_reply" (member asked something or shared something ' +
+      'substantial), "quick_comment" (a short human touch is enough), "like_only" ' +
+      '(acknowledge without commenting), "skip" (owner engagement adds nothing),\n' +
+      '  "reason": why, in at most 15 words,\n' +
+      '  "reply": the suggested comment text (empty string for like_only and skip). ' +
+      "Address the member by first name when known. Detailed replies: 2-4 sentences. " +
+      "Quick comments: one sentence."
+    );
+    return lines.join("\n");
+  };
+
+  // Tolerant parser for the model's JSON (strips fences, finds the array).
+  // Returns an array of suggestion objects, or null if unparseable.
+  SC.parseEngagementSuggestions = function (text) {
+    if (!text) return null;
+    var s = String(text).replace(/```(?:json)?/gi, "");
+    var start = s.indexOf("[");
+    var end = s.lastIndexOf("]");
+    if (start === -1 || end === -1 || end <= start) return null;
+    try {
+      var arr = JSON.parse(s.slice(start, end + 1));
+      if (!Array.isArray(arr)) return null;
+      return arr.map(function (item) {
+        return {
+          post: Number(item.post) || 0,
+          action: String(item.action || "skip"),
+          reason: String(item.reason || ""),
+          reply: String(item.reply || ""),
+        };
+      });
+    } catch (e) {
+      return null;
+    }
+  };
+
   SC.DRAFT_SYSTEM_PROMPT =
     "You are a ghostwriter for a Skool community owner. You write posts that sound " +
     "like the owner, match the requested content pillar, and are built to spark " +

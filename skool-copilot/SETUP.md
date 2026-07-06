@@ -80,7 +80,10 @@ state:
 | 🔴 No admin access detected | You're on the allowlisted community but the page shows no admin markers — hover the pill to see which checks ran |
 | ⚪ Not in your allowlist | This community wasn't added to your account |
 
-Health dashboard + drafting live in the side panel and the web app.
+Health dashboard + drafting live in the side panel and the web app. The side
+panel's **📖 Read & suggest** button reads the posts currently on your screen
+and suggests how to engage with each (like / quick comment / drafted reply to
+copy) — it never clicks or posts for you.
 
 ---
 

@@ -294,6 +294,144 @@
     setTimeout(function () { btn.textContent = original; }, 1400);
   }
 
+  /* ---------------------- read page & suggest ---------------------- */
+
+  var ACTION_LABELS = {
+    detailed_reply: "✍️ Detailed reply",
+    quick_comment: "💬 Quick comment",
+    like_only: "👍 Like it",
+    skip: "⏭ Skip",
+  };
+
+  function readPagePosts(limit) {
+    return new Promise(function (resolve, reject) {
+      chrome.tabs.query({ active: true, lastFocusedWindow: true }, function (tabs) {
+        var tab = tabs && tabs[0];
+        if (!tab || !tab.url || tab.url.indexOf("skool.com") === -1) {
+          reject(new Error("Switch to your Skool community tab first, then try again."));
+          return;
+        }
+        chrome.tabs.sendMessage(tab.id, { type: "READ_PAGE_POSTS", limit: limit }, function (res) {
+          if (chrome.runtime.lastError) {
+            reject(new Error("Couldn't reach the page — reload your Skool tab once, then retry."));
+          } else if (!res || !res.ok) {
+            reject(new Error((res && res.error) || "Couldn't read the page."));
+          } else {
+            resolve(res);
+          }
+        });
+      });
+    });
+  }
+
+  async function readAndSuggest() {
+    $("sp-read-error").textContent = "";
+    $("sp-read-status").textContent = "";
+    var btn = $("sp-read");
+    btn.disabled = true;
+    btn.textContent = "Reading…";
+    try {
+      var settings = (await SC.storage.get("sc_ai_settings")) || {};
+      if (!settings.provider) throw new Error("No AI provider configured. Open Settings.");
+      var apiKey = await SC.vault.loadApiKey(settings.provider);
+      if (!apiKey) throw new Error("No API key stored for " + settings.provider + ". Open Settings.");
+
+      var limit = Number($("sp-read-count").value) || 0;
+      var page = await readPagePosts(limit);
+
+      // Keep the selected community in step with the tab being read.
+      var pageCommunity = communities.find(function (c) {
+        return (c.slug || SC.skoolSlug(c.skool_url)) === page.slug;
+      });
+      if (pageCommunity && (!current || pageCommunity.id !== current.id)) {
+        $("sp-community").value = pageCommunity.id;
+        await selectCommunity(pageCommunity.id);
+      }
+      if (!page.posts.length) {
+        throw new Error("No posts found on this page — scroll the feed a little and retry.");
+      }
+
+      $("sp-read-status").textContent =
+        "Read " + page.posts.length + " of " + page.totalOnPage +
+        " loaded post(s). Asking " + settings.provider + " for suggestions…";
+      btn.textContent = "Thinking…";
+
+      var voiceRows = current
+        ? await client.from("voice_profiles").select("*").eq("community_id", current.id).limit(1)
+        : [];
+      var voice = (voiceRows && voiceRows[0]) || {};
+
+      var text = await SC.generateDraft({
+        provider: settings.provider,
+        apiKey: apiKey,
+        model: settings.model,
+        system: SC.ENGAGE_SYSTEM_PROMPT,
+        maxTokens: 4000,
+        prompt: SC.buildEngagementPrompt({
+          communityName: current ? current.name : "",
+          voice: voice,
+          posts: page.posts,
+        }),
+      });
+
+      var suggestions = SC.parseEngagementSuggestions(text);
+      if (!suggestions) {
+        // Unparseable — show the raw text rather than nothing.
+        $("sp-suggestions").innerHTML =
+          '<p class="muted">Couldn\'t parse structured suggestions; raw response:</p>' +
+          "<textarea rows='10'>" + escapeHtml(text) + "</textarea>";
+      } else {
+        renderSuggestions(suggestions, page.posts);
+      }
+      $("sp-read-status").textContent =
+        "Suggestions for " + page.posts.length + " post(s) — copy any reply and paste it on Skool.";
+    } catch (e) {
+      $("sp-read-error").textContent = String((e && e.message) || e);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "📖 Read & suggest";
+    }
+  }
+
+  function renderSuggestions(suggestions, posts) {
+    var host = $("sp-suggestions");
+    host.innerHTML = "";
+    suggestions.forEach(function (s, i) {
+      var post = posts[(s.post || i + 1) - 1] || posts[i] || {};
+      var div = document.createElement("div");
+      div.className = "sugg";
+      var snippet = (post.post_text || "").replace(/\s+/g, " ").slice(0, 110);
+      div.innerHTML =
+        '<div class="head"><span class="who">' + escapeHtml(post.author || "Member") +
+        '</span><span class="counts">' + (post.likes || 0) + " 👍 · " +
+        (post.comments || 0) + " 💬</span></div>" +
+        '<div class="snippet">' + escapeHtml(snippet) + "…</div>" +
+        '<span class="badge ' + escapeHtml(s.action) + '">' +
+        (ACTION_LABELS[s.action] || escapeHtml(s.action)) + "</span>" +
+        '<span class="why">' + escapeHtml(s.reason) + "</span>";
+      if (s.reply) {
+        var ta = document.createElement("textarea");
+        ta.rows = 3;
+        ta.value = s.reply;
+        div.appendChild(ta);
+        var row = document.createElement("div");
+        row.className = "row";
+        var copy = document.createElement("button");
+        copy.className = "btn small";
+        copy.type = "button";
+        copy.textContent = "📋 Copy reply";
+        copy.addEventListener("click", function () {
+          navigator.clipboard.writeText(ta.value).then(function () {
+            flash(copy, "✅ Copied");
+          });
+        });
+        row.appendChild(copy);
+        div.appendChild(row);
+      }
+      host.appendChild(div);
+    });
+  }
+
   /* ----------------------------- auth ------------------------------ */
 
   async function signIn(isSignUp) {
@@ -335,6 +473,7 @@
     selectCommunity(e.target.value);
   });
   $("sp-generate").addEventListener("click", generate);
+  $("sp-read").addEventListener("click", readAndSuggest);
   $("sp-copy").addEventListener("click", copyDraft);
   $("sp-save").addEventListener("click", saveDraft);
   $("sp-add-save").addEventListener("click", addCommunity);

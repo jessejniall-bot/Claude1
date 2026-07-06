@@ -487,6 +487,37 @@
     if (state.active) scheduleScrape();
   }
 
+  // On-demand read for the side panel's "Read & suggest": returns the
+  // posts currently rendered on this page. Same gate as passive scraping —
+  // allowlist plus admin signal (or the explicit override).
+  chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+    if (!msg || msg.type !== "READ_PAGE_POSTS") return;
+    if (!state.slug) {
+      sendResponse({ ok: false, error: "This tab isn't on a Skool community page." });
+      return;
+    }
+    if (!state.active) {
+      sendResponse({
+        ok: false,
+        slug: state.slug,
+        error: !state.allowed
+          ? "This community isn't in your allowlist."
+          : "No admin access detected here — tick the force-enable switch, then reload this tab.",
+      });
+      return;
+    }
+    var data = readNextData();
+    var posts = data ? collectNextDataPosts(data) : [];
+    if (!posts.length) posts = collectDomPosts();
+    var limit = msg.limit > 0 ? msg.limit : posts.length;
+    sendResponse({
+      ok: true,
+      slug: state.slug,
+      totalOnPage: posts.length,
+      posts: posts.slice(0, limit),
+    });
+  });
+
   // Calibration helper: run SC_COPILOT_DIAGNOSE() in the page console and
   // share the output to tune admin detection for Skool's current markup.
   // It reports structure only — role values, JSON paths, and slug-related

@@ -138,6 +138,15 @@ verdict (is this community healthy, and why), what's working, and 3–5 concrete
 improvements tied to specific stats or quoted comments. Like drafting, this is
 one BYOK call from your browser — nothing goes through a middleman.
 
+## Read & suggest (side panel)
+
+While on your community, pick how many of the currently-loaded posts to read
+(5/10/20/all) and hit **📖 Read & suggest**. One BYOK call returns a
+recommendation per post — 👍 like it, 💬 quick comment, ✍️ detailed reply, or
+skip — with a reason and a drafted reply in your voice that you can edit and
+copy. Suggestion-only by design: the extension never clicks, likes, or posts
+on your behalf. Gated by the same ownership checks as scraping.
+
 ## Post generator
 
 Drafts are grounded in the scraped stats: every generation prompt includes the
