@@ -125,6 +125,30 @@ const ap = SC.buildAnalysisPrompt({
 check("analysis prompt: structure", ap.includes("VERDICT"));
 check("analysis prompt: comments included", ap.includes("Alice: great post"));
 
+/* -------------------- engagement suggestions --------------------- */
+console.log("engagement suggestions");
+const ep = SC.buildEngagementPrompt({
+  communityName: "T",
+  voice: { tone_notes: "warm", banned_words: ["synergy"] },
+  posts: [
+    { author: "Alice", post_text: "How do I price my first offer?", likes: 3, comments: 1 },
+    { author: "Bob", post_text: "Just hit 100 members!", likes: 9, comments: 4 },
+  ],
+});
+check("engage prompt: posts included", ep.includes("POST 2") && ep.includes("Alice"));
+check("engage prompt: action vocabulary", ep.includes("detailed_reply") && ep.includes("like_only"));
+check("engage prompt: voice", ep.includes("warm") && ep.includes("synergy"));
+
+const goodJson = '```json\n[{"post":1,"action":"detailed_reply","reason":"asked a question","reply":"Hey Alice!"},' +
+  '{"post":2,"action":"like_only","reason":"celebration","reply":""}]\n```';
+const parsed = SC.parseEngagementSuggestions(goodJson);
+check("parser: strips fences, parses", parsed && parsed.length === 2, parsed);
+check("parser: fields normalized", parsed[0].action === "detailed_reply" && parsed[1].reply === "");
+const wrapped = SC.parseEngagementSuggestions('Sure! Here you go: [{"post":1,"action":"skip","reason":"x","reply":""}] Hope that helps!');
+check("parser: tolerates surrounding prose", wrapped && wrapped.length === 1);
+check("parser: garbage returns null", SC.parseEngagementSuggestions("no json here") === null);
+check("parser: empty returns null", SC.parseEngagementSuggestions("") === null);
+
 /* ------------------------ unicode styling ------------------------ */
 console.log("unicode styling");
 const b = SC.uni.style("Big Win 2024!", "bold");

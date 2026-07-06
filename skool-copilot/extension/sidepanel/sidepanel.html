@@ -63,6 +63,27 @@
     </section>
 
     <section class="card">
+      <h2>Engage with this page</h2>
+      <p class="muted">Reads the posts currently loaded in your Skool tab and suggests
+        how to engage with each — like, quick comment, or a drafted reply you can
+        copy. Nothing is ever clicked or posted for you.</p>
+      <div class="row">
+        <label class="inline-select">Posts
+          <select id="sp-read-count">
+            <option value="5">5</option>
+            <option value="10" selected>10</option>
+            <option value="20">20</option>
+            <option value="0">All loaded</option>
+          </select>
+        </label>
+        <button id="sp-read" class="btn primary" type="button">📖 Read &amp; suggest</button>
+      </div>
+      <p id="sp-read-status" class="muted"></p>
+      <p id="sp-read-error" class="error"></p>
+      <div id="sp-suggestions"></div>
+    </section>
+
+    <section class="card">
       <h2>Draft the next post</h2>
       <p id="sp-overdue" class="muted"></p>
       <label class="field">
