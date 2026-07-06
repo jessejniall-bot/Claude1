@@ -527,6 +527,47 @@
       .replace(/-[a-zA-Z0-9]{5,10}$/, "-HASH");
   }
 
+  // Recursively describe an object as "path: type(len) = short preview"
+  // lines — reveals real field names and enough of each value to identify
+  // it, without dumping full content. Arrays are sampled at index 0 only
+  // (with their length noted) so one post's/comment's shape stands in for
+  // all of them.
+  var SUMMARY_MAX_DEPTH = 6;
+  var SUMMARY_MAX_BREADTH = 30;
+  var SUMMARY_BUDGET = 300;
+  function summarizeValue(v, depth, path, lines) {
+    if (lines.length >= SUMMARY_BUDGET) return;
+    if (v === null) { lines.push(path + ": null"); return; }
+    if (v === undefined) { lines.push(path + ": undefined"); return; }
+    var t = typeof v;
+    if (t === "string") {
+      var preview = v.length > 50 ? v.slice(0, 50) + "…" : v;
+      lines.push(path + ": string(" + v.length + ") = " + JSON.stringify(preview));
+      return;
+    }
+    if (t === "number" || t === "boolean") { lines.push(path + ": " + t + " = " + v); return; }
+    if (Array.isArray(v)) {
+      lines.push(path + ": array(len=" + v.length + ")");
+      if (v.length > 0 && depth < SUMMARY_MAX_DEPTH) {
+        summarizeValue(v[0], depth + 1, path + "[0]", lines);
+      }
+      return;
+    }
+    if (t === "object") {
+      var keys = Object.keys(v);
+      lines.push(path + ": object(keys=" + keys.length + ")");
+      if (depth >= SUMMARY_MAX_DEPTH) return;
+      keys.slice(0, SUMMARY_MAX_BREADTH).forEach(function (k) {
+        summarizeValue(v[k], depth + 1, path + "." + k, lines);
+      });
+      if (keys.length > SUMMARY_MAX_BREADTH) {
+        lines.push(path + ": …(+" + (keys.length - SUMMARY_MAX_BREADTH) + " more keys)");
+      }
+      return;
+    }
+    lines.push(path + ": " + t);
+  }
+
   // Structural snapshot of the current page for calibrating the scraper
   // against Skool's real, current markup — used when automatic detection
   // finds nothing. Reports shapes and counts, not member content, except
@@ -558,6 +599,29 @@
       }
     } else {
       report.nextData = { present: false };
+    }
+
+    // 1b. Targeted dump of whichever pageProps key looks like the feed —
+    // reveals the REAL field names for post/comment content, counts, and
+    // timestamps, which is what actually drives extraction. Field-name
+    // guesses go stale as Skool ships changes; this replaces guessing.
+    report.feedSample = null;
+    try {
+      var pp = ndEl && parsed && parsed.props && parsed.props.pageProps;
+      var candidateKeys = ["postTrees", "posts", "feed", "items", "results"];
+      var feedKey = pp && candidateKeys.filter(function (k) {
+        return Array.isArray(pp[k]) && pp[k].length > 0;
+      })[0];
+      if (feedKey) {
+        var lines = [];
+        summarizeValue(pp[feedKey][0], 0, "pageProps." + feedKey + "[0]", lines);
+        report.feedSample = { key: feedKey, length: pp[feedKey].length, lines: lines };
+      } else if (pp) {
+        report.feedSample = "No array field named " + candidateKeys.join("/") +
+          " found on pageProps with items in it.";
+      }
+    } catch (e) {
+      report.feedSample = "error: " + String((e && e.message) || e);
     }
 
     // 2. App Router "flight" data — inline scripts calling self.__next_f.push(...).
