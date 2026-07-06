@@ -162,3 +162,11 @@ textarea { resize: vertical; }
 .sugg .why { font-size: 11.5px; color: var(--muted); }
 .sugg textarea { margin-top: 6px; font-size: 12.5px; }
 .sugg .row { margin-top: 4px; }
+
+#sp-report-output {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  white-space: pre;
+  overflow-x: auto;
+}
+#sp-report-box { margin-top: 8px; }

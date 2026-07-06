@@ -432,6 +432,40 @@
     });
   }
 
+  /* ------------------------ page report capture --------------------- */
+
+  async function capturePageReport() {
+    $("sp-report-error").textContent = "";
+    var btn = $("sp-report");
+    btn.disabled = true;
+    btn.textContent = "Capturing…";
+    try {
+      var tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      var tab = tabs && tabs[0];
+      if (!tab || !tab.url || tab.url.indexOf("skool.com") === -1) {
+        throw new Error("Switch to your Skool community tab first, then try again.");
+      }
+      var res = await new Promise(function (resolve, reject) {
+        chrome.tabs.sendMessage(tab.id, { type: "CAPTURE_PAGE_REPORT" }, function (r) {
+          if (chrome.runtime.lastError) {
+            reject(new Error("Couldn't reach the page — reload your Skool tab once, then retry."));
+          } else if (!r || !r.ok) {
+            reject(new Error((r && r.error) || "Couldn't capture a report."));
+          } else {
+            resolve(r);
+          }
+        });
+      });
+      $("sp-report-output").value = JSON.stringify(res.report, null, 2);
+      $("sp-report-box").classList.remove("hidden");
+    } catch (e) {
+      $("sp-report-error").textContent = String((e && e.message) || e);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "🔬 Capture page report";
+    }
+  }
+
   /* ----------------------------- auth ------------------------------ */
 
   async function signIn(isSignUp) {
@@ -474,6 +508,12 @@
   });
   $("sp-generate").addEventListener("click", generate);
   $("sp-read").addEventListener("click", readAndSuggest);
+  $("sp-report").addEventListener("click", capturePageReport);
+  $("sp-report-copy").addEventListener("click", function () {
+    navigator.clipboard.writeText($("sp-report-output").value).then(function () {
+      flash($("sp-report-copy"), "✅ Copied");
+    });
+  });
   $("sp-copy").addEventListener("click", copyDraft);
   $("sp-save").addEventListener("click", saveDraft);
   $("sp-add-save").addEventListener("click", addCommunity);

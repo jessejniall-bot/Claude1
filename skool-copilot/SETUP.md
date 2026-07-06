@@ -93,6 +93,15 @@ copy) — it never clicks or posts for you.
   not configured / sign-in needed / exact error). Follow what it says.
 - **"Test backend" fails** — the message tells you which of the three inputs
   is wrong: unreachable URL, rejected anon key, or schema not installed.
+- **Posts/comments never sync, even with the override on** — Skool's page
+  structure has likely changed in a way the extraction code doesn't
+  recognize at all (not just the admin check). In the side panel, scroll to
+  **Troubleshooting → 🔬 Capture page report**, click it, then **📋 Copy
+  report** and send the output to Claude — it reports page structure (element
+  counts, class names, data shapes), not member content, except capped raw
+  samples under "flight data" which may include real post text, so skim
+  before sharing. This is the fastest path to getting extraction fixed for
+  real.
 - **"No admin access detected" on a community you DO admin** — Skool's
   markup changed and automatic detection missed it. Open the side panel,
   select the community, and tick **"Force-enable scraping here"**, then

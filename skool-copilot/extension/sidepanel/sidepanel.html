@@ -106,6 +106,22 @@
         </div>
       </div>
     </section>
+
+    <section class="card">
+      <h2>Troubleshooting</h2>
+      <p class="muted">Not seeing posts sync? Capture a structural snapshot of the
+        current Skool page and send it to Claude so detection can be tuned to
+        match. This reports page structure (element counts, class names, data
+        shapes) — not member content — <strong>except</strong> short raw samples
+        under "flight data," which can include real post/comment text. Look them
+        over before sharing.</p>
+      <button id="sp-report" class="btn" type="button">🔬 Capture page report</button>
+      <p id="sp-report-error" class="error"></p>
+      <div id="sp-report-box" class="hidden">
+        <textarea id="sp-report-output" rows="12" readonly></textarea>
+        <button id="sp-report-copy" class="btn small" type="button">📋 Copy report</button>
+      </div>
+    </section>
   </main>
 
   <script src="../shared/config.js"></script>
