@@ -102,6 +102,11 @@ copy) — it never clicks or posts for you.
   samples under "flight data" which may include real post text, so skim
   before sharing. This is the fastest path to getting extraction fixed for
   real.
+- **Comments never sync, even though posts do** — this is expected for now.
+  Skool's community feed page only sends a *comment count* per post, not the
+  actual comment text — that only loads once you open an individual post.
+  Comment syncing needs its own extraction pass from the post-detail page,
+  which isn't wired up yet.
 - **"No admin access detected" on a community you DO admin** — Skool's
   markup changed and automatic detection missed it. Open the side panel,
   select the community, and tick **"Force-enable scraping here"**, then
