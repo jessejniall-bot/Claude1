@@ -518,6 +518,118 @@
     });
   });
 
+  // Normalize CSS-module-style class names (e.g. "PostCard_root__aB3dQ")
+  // so a frequency count groups instances of the same component instead
+  // of being fragmented by their per-build hash suffix.
+  function normalizeClassName(cls) {
+    return cls
+      .replace(/__[a-zA-Z0-9_-]{4,10}$/, "__HASH")
+      .replace(/-[a-zA-Z0-9]{5,10}$/, "-HASH");
+  }
+
+  // Structural snapshot of the current page for calibrating the scraper
+  // against Skool's real, current markup — used when automatic detection
+  // finds nothing. Reports shapes and counts, not member content, except
+  // for capped raw samples of any React Server Component "flight" script
+  // (Next.js App Router's data format), which may contain post/comment
+  // text — the side panel warns about this before the user shares it.
+  function collectPageReport() {
+    var report = {
+      url: location.href,
+      slug: state.slug,
+      capturedAt: new Date().toISOString(),
+      readyState: document.readyState,
+    };
+
+    // 1. Classic Pages Router data island.
+    var ndEl = document.getElementById("__NEXT_DATA__");
+    if (ndEl) {
+      try {
+        var parsed = JSON.parse(ndEl.textContent);
+        report.nextData = {
+          present: true,
+          sizeChars: ndEl.textContent.length,
+          topLevelKeys: Object.keys(parsed),
+          pagePropsKeys: parsed.props && parsed.props.pageProps
+            ? Object.keys(parsed.props.pageProps) : [],
+        };
+      } catch (e) {
+        report.nextData = { present: true, parseError: String(e.message) };
+      }
+    } else {
+      report.nextData = { present: false };
+    }
+
+    // 2. App Router "flight" data — inline scripts calling self.__next_f.push(...).
+    var flightScripts = Array.prototype.filter.call(
+      document.querySelectorAll("script"),
+      function (s) { return s.textContent && s.textContent.indexOf("__next_f.push") !== -1; }
+    );
+    report.nextFlight = {
+      scriptCount: flightScripts.length,
+      totalChars: flightScripts.reduce(function (sum, s) { return sum + s.textContent.length; }, 0),
+      samples: flightScripts.slice(0, 3).map(function (s) { return s.textContent.slice(0, 1500); }),
+    };
+
+    // 3. Other common client-state globals.
+    report.globals = [];
+    ["__APOLLO_STATE__", "__INITIAL_STATE__", "__PRELOADED_STATE__", "__RELAY_STORE__"]
+      .forEach(function (key) {
+        if (window[key] !== undefined) {
+          var keys = [];
+          try { keys = Object.keys(window[key] || {}).slice(0, 20); } catch (e) {}
+          report.globals.push({ name: key, topKeys: keys });
+        }
+      });
+
+    // 4. Other JSON data islands by tag, not just __NEXT_DATA__.
+    report.jsonScripts = Array.prototype.map.call(
+      document.querySelectorAll("script[type='application/json']"),
+      function (s) { return { id: s.id || "(no id)", length: s.textContent.length }; }
+    );
+
+    // 5. DOM census: broad selector hit-counts + most common component
+    // class names (normalized), to spot the real feed/post/comment markup.
+    var selectors = [
+      "article", "[class*='post' i]", "[class*='feed' i]", "[class*='comment' i]",
+      "[class*='reply' i]", "[class*='card' i]", "[class*='thread' i]",
+      "[data-testid]", "[role='article']",
+    ];
+    report.selectorCounts = {};
+    selectors.forEach(function (sel) {
+      try { report.selectorCounts[sel] = document.querySelectorAll(sel).length; } catch (e) {}
+    });
+
+    var classFreq = {};
+    Array.prototype.forEach.call(document.querySelectorAll("[class]"), function (el) {
+      var cn = el.className;
+      if (typeof cn !== "string" || !cn) return;
+      cn.split(/\s+/).forEach(function (c) {
+        var norm = normalizeClassName(c);
+        classFreq[norm] = (classFreq[norm] || 0) + 1;
+      });
+    });
+    report.topClasses = Object.keys(classFreq)
+      .sort(function (a, b) { return classFreq[b] - classFreq[a]; })
+      .slice(0, 40)
+      .map(function (c) { return c + " (" + classFreq[c] + ")"; });
+
+    return report;
+  }
+
+  chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+    if (!msg || msg.type !== "CAPTURE_PAGE_REPORT") return;
+    if (!/(^|\.)skool\.com$/.test(location.hostname)) {
+      sendResponse({ ok: false, error: "Not a Skool page." });
+      return;
+    }
+    try {
+      sendResponse({ ok: true, report: collectPageReport() });
+    } catch (e) {
+      sendResponse({ ok: false, error: String((e && e.message) || e) });
+    }
+  });
+
   // Calibration helper: run SC_COPILOT_DIAGNOSE() in the page console and
   // share the output to tune admin detection for Skool's current markup.
   // It reports structure only — role values, JSON paths, and slug-related
