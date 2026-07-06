@@ -49,9 +49,16 @@
 
   function parentRef(obj) {
     for (var i = 0; i < PARENT_REF_KEYS.length; i++) {
-      var v = obj[PARENT_REF_KEYS[i]];
-      if (typeof v === "string" && v) return v;
-      if (v && typeof v === "object" && typeof v.id === "string") return v.id;
+      var key = PARENT_REF_KEYS[i];
+      var v = obj[key];
+      var id = null;
+      if (typeof v === "string" && v) id = v;
+      else if (v && typeof v === "object" && typeof v.id === "string") id = v.id;
+      if (!id) continue;
+      // Skool sets a top-level post's own rootId/root_id to its own id —
+      // that's a self-pointer, not a reference to a parent.
+      if ((key === "rootId" || key === "root_id") && id === obj.id) continue;
+      return id;
     }
     return null;
   }
@@ -201,10 +208,70 @@
     return isNaN(d.getTime()) ? null : d.toISOString();
   }
 
-  // Walk __NEXT_DATA__ collecting objects that look like feed posts.
-  // Skool post objects generally carry an id, created timestamp, some
-  // content/title metadata, and vote/comment counts.
+  // Real names read better than Skool's slug-like user.name ("jesse-niall-3526"),
+  // so prefer first/last when present.
+  function authorName(user) {
+    if (!user || typeof user !== "object") return null;
+    var first = user.firstName || user.first_name;
+    var last = user.lastName || user.last_name;
+    if (first || last) return [first, last].filter(Boolean).join(" ");
+    return user.name || null;
+  }
+
+  // Shared shape mapper for a Skool post object, whether it came from the
+  // direct postTrees path or the generic heuristic walk below.
+  function extractPost(obj) {
+    var meta = obj.metadata && typeof obj.metadata === "object" ? obj.metadata : {};
+    var title = meta.title || obj.title || "";
+    var content = meta.content || obj.content || "";
+    var text = (title ? title + "\n\n" : "") + content;
+    if (!text.trim()) return null;
+    var id = obj.id || obj.name || meta.id || hashText(text);
+    // Skool sometimes exposes comments as a count, sometimes as an
+    // array of comment objects — accept both.
+    var rawComments = meta.comments ?? obj.commentsCount ?? obj.comments ?? 0;
+    var commentCount = Array.isArray(rawComments)
+      ? rawComments.length
+      : Number(rawComments) || 0;
+    return {
+      post_key: String(id),
+      post_text: text.slice(0, 8000),
+      likes: Number(meta.upvotes ?? obj.upvotes ?? meta.likes ?? 0) || 0,
+      comments: commentCount,
+      posted_at: toIso(obj.createdAt || obj.created_at || meta.createdAt),
+      author: authorName(obj.user || obj.author),
+      first_comment_at: toIso(meta.lastComment || meta.firstCommentAt || null),
+    };
+  }
+
+  // Primary extraction path: Skool's real feed shape, confirmed via a
+  // page-report capture — pageProps.postTrees[].post. Returns null (not an
+  // empty array) when this key isn't present so callers know to fall back.
+  function extractFromPostTrees(root) {
+    var pageProps = root && root.props && root.props.pageProps;
+    var trees = pageProps && pageProps.postTrees;
+    if (!Array.isArray(trees) || !trees.length) return null;
+    var found = [];
+    var seen = new Set();
+    trees.forEach(function (tree) {
+      var post = tree && tree.post;
+      if (!post || typeof post !== "object") return;
+      var p = extractPost(post);
+      if (p && !seen.has(p.post_key)) {
+        seen.add(p.post_key);
+        found.push(p);
+      }
+    });
+    return found;
+  }
+
+  // Walk __NEXT_DATA__ collecting objects that look like feed posts. Used
+  // when the direct postTrees path above isn't present (e.g. other Skool
+  // page types, or Skool changing its data shape again in the future).
   function collectNextDataPosts(root) {
+    var direct = extractFromPostTrees(root);
+    if (direct) return direct;
+
     var found = [];
     var seen = new Set();
 
@@ -225,38 +292,6 @@
       return hasContent && hasCounts && hasTime && !parentRef(obj);
     }
 
-    function extract(obj) {
-      var meta = obj.metadata && typeof obj.metadata === "object" ? obj.metadata : {};
-      var title = meta.title || obj.title || "";
-      var content = meta.content || obj.content || "";
-      var text = (title ? title + "\n\n" : "") + content;
-      if (!text.trim()) return null;
-      var id = obj.id || obj.name || meta.id || hashText(text);
-      if (seen.has(id)) return null;
-      seen.add(id);
-      var user = obj.user || obj.author || {};
-      var authorName =
-        user.name ||
-        [user.firstName || user.first_name, user.lastName || user.last_name]
-          .filter(Boolean).join(" ") ||
-        null;
-      // Skool sometimes exposes comments as a count, sometimes as an
-      // array of comment objects — accept both.
-      var rawComments = meta.comments ?? obj.commentsCount ?? obj.comments ?? 0;
-      var commentCount = Array.isArray(rawComments)
-        ? rawComments.length
-        : Number(rawComments) || 0;
-      return {
-        post_key: String(id),
-        post_text: text.slice(0, 8000),
-        likes: Number(meta.upvotes ?? obj.upvotes ?? meta.likes ?? 0) || 0,
-        comments: commentCount,
-        posted_at: toIso(obj.createdAt || obj.created_at || meta.createdAt),
-        author: authorName,
-        first_comment_at: toIso(meta.lastComment || meta.firstCommentAt || null),
-      };
-    }
-
     var stack = [root];
     var guard = 0;
     while (stack.length && guard < 200000) {
@@ -268,8 +303,11 @@
         continue;
       }
       if (looksLikePost(cur)) {
-        var p = extract(cur);
-        if (p) found.push(p);
+        var p = extractPost(cur);
+        if (p && !seen.has(p.post_key)) {
+          seen.add(p.post_key);
+          found.push(p);
+        }
       }
       for (var k in cur) {
         if (Object.prototype.hasOwnProperty.call(cur, k)) stack.push(cur[k]);
@@ -300,17 +338,11 @@
       var id = obj.id || obj.name || hashText(String(content));
       if (seen.has(id)) return null;
       seen.add(id);
-      var user = obj.user || obj.author || {};
-      var authorName =
-        user.name ||
-        [user.firstName || user.first_name, user.lastName || user.last_name]
-          .filter(Boolean).join(" ") ||
-        null;
       return {
         comment_key: String(id),
         post_key: parentRef(obj),
         comment_text: String(content).slice(0, 4000),
-        author: authorName,
+        author: authorName(obj.user || obj.author),
         likes: Number(meta.upvotes ?? obj.upvotes ?? 0) || 0,
         commented_at: toIso(obj.createdAt || obj.created_at),
       };
