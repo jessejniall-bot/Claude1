@@ -65,7 +65,7 @@
     document.querySelectorAll(".view").forEach(function (v) {
       v.classList.toggle("hidden", v.id !== viewId);
     });
-    var inApp = ["view-dashboard", "view-ideas", "view-drafts", "view-queue", "view-settings"]
+    var inApp = ["view-dashboard", "view-inbox", "view-ideas", "view-drafts", "view-queue", "view-settings"]
       .indexOf(viewId) !== -1;
     $("tabs").classList.toggle("hidden", !inApp);
     $("community-picker").classList.toggle("hidden", !inApp || state.communities.length < 2);
@@ -80,6 +80,7 @@
     if (!document.getElementById(viewId)) { viewId = "view-dashboard"; name = "dashboard"; }
     show(viewId);
     if (name === "dashboard") renderDashboard();
+    else if (name === "inbox") renderInbox();
     else if (name === "ideas") renderIdeas();
     else if (name === "drafts") renderDrafts();
     else if (name === "queue") renderQueue();
@@ -195,10 +196,17 @@
       {
         l: "Avg first reply (questions)",
         v: latency.avgFirstReplyHours == null ? "—" : latency.avgFirstReplyHours + "h",
+        href: "#/inbox",
+        sub: latency.unansweredQuestions > 0
+          ? latency.unansweredQuestions + " waiting →" : "Open inbox →",
       },
     ];
     $("dash-stats").innerHTML = tiles.map(function (t) {
-      return '<div class="stat"><div class="v">' + t.v + '</div><div class="l">' + t.l + "</div></div>";
+      var inner = '<div class="v">' + t.v + '</div><div class="l">' + t.l + "</div>" +
+        (t.sub ? '<div class="l link-sub">' + escapeHtml(t.sub) + "</div>" : "");
+      return t.href
+        ? '<a class="stat stat-link" href="' + t.href + '">' + inner + "</a>"
+        : '<div class="stat">' + inner + "</div>";
     }).join("");
 
     SCCharts.lineChart($("chart-engagement"), trend.points);
@@ -223,6 +231,305 @@
       ? "Most overdue pillar: " + overdue.name + " — " + overdue.actualPct +
         "% of recent posts vs " + overdue.targetPct + "% target."
       : "Not enough classified posts yet; the generator will default to your highest-target pillar.";
+  }
+
+  /* ------------------------------ inbox ---------------------------- */
+  // Needs-response list + threaded conversations, with per-comment AI reply
+  // drafting, queue-to-Skool, copy-and-open, and thread summarization.
+
+  var AI_SETTINGS_KEY_INBOX = "sc_ai_settings";
+
+  function communityBaseUrl() {
+    var c = currentCommunity();
+    if (!c) return "https://www.skool.com";
+    var slug = c.slug || SC.skoolSlug(c.skool_url);
+    return "https://www.skool.com/" + slug;
+  }
+
+  // Deep link to the exact post when we scraped its URL slug, else the
+  // community feed (the documented "at minimum" fallback).
+  function postDeepLink(postKey) {
+    var post = state.posts.find(function (p) { return p.post_key === postKey; });
+    if (post && post.post_name) return communityBaseUrl() + "/" + post.post_name;
+    return communityBaseUrl();
+  }
+
+  async function renderInbox() {
+    await loadCommunityData();
+    var threshold = Number($("inbox-threshold").value) || 24;
+    var ownerNames = ownerNamesFromData();
+
+    var items = SC.health.needsResponse(state.posts, state.comments, {
+      thresholdHours: threshold,
+      ownerNames: ownerNames,
+    });
+
+    $("inbox-reply-caps").textContent = state.comments.length
+      ? "Replies you queue post automatically when you next open Skool with the extension active."
+      : "";
+
+    var host = $("inbox-list");
+    if (!items.length) {
+      host.innerHTML = '<p class="muted good-note">✅ Nothing waiting — every member ' +
+        "comment past your window has a reply. Nice.</p>";
+    } else {
+      host.innerHTML = "";
+      items.forEach(function (item, i) {
+        host.appendChild(inboxItemEl(item, i));
+      });
+    }
+
+    // Threaded conversations.
+    var groups = SC.threads.byPost(state.comments, state.posts);
+    $("inbox-empty").classList.toggle("hidden", groups.length > 0);
+    var thost = $("threads-host");
+    thost.innerHTML = "";
+    groups.slice(0, 30).forEach(function (g) { thost.appendChild(threadGroupEl(g)); });
+  }
+
+  // Best-effort owner display names: authors of comments already flagged
+  // is_owner, so older data without the flag still resolves the owner.
+  function ownerNamesFromData() {
+    var names = {};
+    (state.comments || []).forEach(function (c) {
+      if (c.is_owner && c.author) names[c.author] = true;
+    });
+    return Object.keys(names);
+  }
+
+  function inboxItemEl(item, idx) {
+    var el = document.createElement("div");
+    el.className = "inbox-item";
+    var who = escapeHtml(item.author || (item.kind === "post" ? "A member (post)" : "A member"));
+    var wait = item.waitingHours >= 48
+      ? Math.round(item.waitingHours / 24) + "d"
+      : item.waitingHours + "h";
+    el.innerHTML =
+      '<div class="head"><span class="who">' + who + "</span>" +
+      '<span class="counts">waiting ' + wait + "</span></div>" +
+      '<div class="snippet">' + escapeHtml(item.text || "") + "</div>" +
+      '<div class="row inbox-actions">' +
+      '<button class="btn small" data-act="suggest">✨ Suggest reply</button>' +
+      '<button class="btn small" data-act="open">↗ Copy &amp; open Skool</button>' +
+      "</div>" +
+      '<div class="reply-box hidden">' +
+      '<textarea class="touch reply-text" rows="3" autocapitalize="sentences" autocorrect="off" ' +
+      'placeholder="Write or generate a reply…"></textarea>' +
+      '<div class="row">' +
+      '<button class="btn small primary" data-act="queue">📤 Queue for Skool</button>' +
+      '<button class="btn small" data-act="copy">📋 Copy</button>' +
+      '<span class="meta reply-status"></span>' +
+      "</div></div>";
+    el._item = item;
+    return el;
+  }
+
+  function threadGroupEl(g) {
+    var el = document.createElement("div");
+    el.className = "thread-group";
+    el._group = g;
+    var title = g.post ? (g.post.post_text || "").split("\n")[0].slice(0, 90) : "(post not scraped)";
+    el.innerHTML =
+      '<div class="thread-head">' +
+      '<button class="thread-toggle" data-act="toggle">▸</button>' +
+      '<span class="thread-title">' + escapeHtml(title) + "</span>" +
+      '<span class="meta">' + g.count + " comment" + (g.count === 1 ? "" : "s") + "</span>" +
+      '<button class="btn small" data-act="summarize">📝 Summarize</button>' +
+      "</div>" +
+      '<div class="thread-summary hidden"></div>' +
+      '<div class="thread-body hidden"></div>';
+    return el;
+  }
+
+  function renderThreadBody(g) {
+    var lines = [];
+    (function walk(nodes, depth) {
+      nodes.forEach(function (n) {
+        lines.push(
+          '<div class="tc" style="margin-left:' + (depth * 16) + 'px">' +
+          '<div class="tc-head"><span class="who">' +
+          escapeHtml(n.author || "Member") + (n.is_owner ? ' <span class="owner-tag">you</span>' : "") +
+          '</span></div>' +
+          '<div class="tc-text">' + escapeHtml(n.comment_text || "") + "</div>" +
+          (n.is_owner ? "" :
+            '<button class="btn tiny" data-reply="' + escapeHtml(n.comment_key || "") + '">↩ Reply</button>') +
+          "</div>"
+        );
+        if (n.replies && n.replies.length) walk(n.replies, depth + 1);
+      });
+    })(g.roots, 0);
+    return lines.join("");
+  }
+
+  // Flatten a thread group into ordered {author,text,depth} for summarization.
+  function flattenThread(g) {
+    var out = [];
+    (function walk(nodes, depth) {
+      nodes.forEach(function (n) {
+        out.push({ author: n.author, text: n.comment_text, depth: depth });
+        if (n.replies && n.replies.length) walk(n.replies, depth + 1);
+      });
+    })(g.roots, 0);
+    return out;
+  }
+
+  async function loadVoiceForCurrent() {
+    if (state.voice) return state.voice;
+    var rows = await state.client.from("voice_profiles").select("*")
+      .eq("community_id", state.currentId).limit(1);
+    state.voice = (rows && rows[0]) || {};
+    return state.voice;
+  }
+
+  // Draft a reply to one comment/post using the shared voice profile.
+  async function draftReply(item, thread) {
+    var demo = await SC.isDemo();
+    var settings = (await SC.storage.get(AI_SETTINGS_KEY_INBOX)) || {};
+    var apiKey = settings.provider ? await SC.vault.loadApiKey(settings.provider) : null;
+    if (!apiKey) {
+      if (demo) return SC.demoReply(item.author, item.text);
+      if (!settings.provider) throw new Error("Configure an AI provider in Settings first.");
+      throw new Error("No API key stored for " + settings.provider + ". Add it in Settings.");
+    }
+    var voice = await loadVoiceForCurrent();
+    var post = state.posts.find(function (p) { return p.post_key === item.post_key; });
+    return SC.generateDraft({
+      provider: settings.provider,
+      apiKey: apiKey,
+      model: settings.model,
+      system: SC.COMMENT_REPLY_SYSTEM_PROMPT,
+      maxTokens: 600,
+      prompt: SC.buildCommentReplyPrompt({
+        communityName: currentCommunity() ? currentCommunity().name : "",
+        voice: voice,
+        postText: post ? post.post_text : "",
+        comment: { author: item.author, text: item.text },
+        thread: thread || [],
+      }),
+    });
+  }
+
+  async function enqueueReply(item, text) {
+    if (!text.trim()) throw new Error("Nothing to queue — write a reply first.");
+    await state.client.from("reply_queue").insert({
+      community_id: state.currentId,
+      target_post_key: item.post_key || "",
+      target_comment_key: item.kind === "comment" ? (item.comment_key || null) : null,
+      reply_text: text,
+      context_text: (item.text || "").slice(0, 500),
+    });
+  }
+
+  async function onInboxClick(e) {
+    var btn = e.target.closest("button[data-act], button[data-reply]");
+    if (!btn) return;
+
+    // Reply-to-a-specific-comment button inside a thread.
+    if (btn.hasAttribute("data-reply")) {
+      var key = btn.getAttribute("data-reply");
+      var comment = state.comments.find(function (c) { return c.comment_key === key; });
+      if (comment) {
+        location.hash = "#/inbox";
+        var pseudo = { kind: "comment", post_key: comment.post_key, comment_key: comment.comment_key,
+          author: comment.author, text: comment.comment_text };
+        openAdHocReply(pseudo);
+      }
+      return;
+    }
+
+    var act = btn.dataset.act;
+    var itemEl = btn.closest(".inbox-item");
+    var groupEl = btn.closest(".thread-group");
+
+    if (itemEl) {
+      var item = itemEl._item;
+      var box = itemEl.querySelector(".reply-box");
+      var ta = itemEl.querySelector(".reply-text");
+      var status = itemEl.querySelector(".reply-status");
+      if (act === "suggest") {
+        box.classList.remove("hidden");
+        status.textContent = "Drafting…";
+        btn.disabled = true;
+        try {
+          ta.value = (await draftReply(item, [])).trim();
+          status.textContent = "";
+        } catch (err) { status.textContent = "❌ " + err.message; }
+        finally { btn.disabled = false; }
+      } else if (act === "open") {
+        try { await navigator.clipboard.writeText(ta && ta.value.trim() ? ta.value : ""); } catch (e2) {}
+        window.open(postDeepLink(item.post_key), "_blank", "noopener");
+      } else if (act === "queue") {
+        status.textContent = "Queuing…";
+        try {
+          await enqueueReply(item, ta.value);
+          status.textContent = "✅ Queued — opens Skool-side when the extension sees your tab.";
+          btn.disabled = true;
+        } catch (err) { status.textContent = "❌ " + err.message; }
+      } else if (act === "copy") {
+        try { await navigator.clipboard.writeText(ta.value); status.textContent = "✅ Copied"; }
+        catch (e3) { status.textContent = "Copy failed."; }
+      }
+      return;
+    }
+
+    if (groupEl) {
+      var g = groupEl._group;
+      if (act === "toggle") {
+        var body = groupEl.querySelector(".thread-body");
+        var open = body.classList.toggle("hidden");
+        btn.textContent = open ? "▸" : "▾";
+        if (!open && !body.dataset.rendered) {
+          body.innerHTML = renderThreadBody(g);
+          body.dataset.rendered = "1";
+        }
+      } else if (act === "summarize") {
+        var sum = groupEl.querySelector(".thread-summary");
+        sum.classList.remove("hidden");
+        sum.textContent = "Summarizing…";
+        btn.disabled = true;
+        try {
+          sum.textContent = (await summarizeThread(g)).trim();
+        } catch (err) { sum.textContent = "❌ " + err.message; }
+        finally { btn.disabled = false; }
+      }
+    }
+  }
+
+  // Reply to an arbitrary comment picked from a thread: scroll an ad-hoc
+  // composer into the needs-response host.
+  function openAdHocReply(item) {
+    var host = $("inbox-list");
+    var existing = host.querySelector('.inbox-item[data-adhoc="' + (item.comment_key || "") + '"]');
+    if (existing) { existing.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+    var el = inboxItemEl(item, 0);
+    el.setAttribute("data-adhoc", item.comment_key || "");
+    el.querySelector(".reply-box").classList.remove("hidden");
+    host.insertBefore(el, host.firstChild);
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  async function summarizeThread(g) {
+    var demo = await SC.isDemo();
+    var settings = (await SC.storage.get(AI_SETTINGS_KEY_INBOX)) || {};
+    var apiKey = settings.provider ? await SC.vault.loadApiKey(settings.provider) : null;
+    var flat = flattenThread(g);
+    if (!flat.length) return "This thread has no comments yet.";
+    if (!apiKey) {
+      if (demo) return SC.demoThreadSummary(flat);
+      if (!settings.provider) throw new Error("Configure an AI provider in Settings first.");
+      throw new Error("No API key stored for " + settings.provider + ".");
+    }
+    return SC.generateDraft({
+      provider: settings.provider,
+      apiKey: apiKey,
+      model: settings.model,
+      system: SC.THREAD_SUMMARY_SYSTEM_PROMPT,
+      maxTokens: 500,
+      prompt: SC.buildThreadSummaryPrompt({
+        postText: g.post ? g.post.post_text : "",
+        comments: flat,
+      }),
+    });
   }
 
   /* --------------------------- generation -------------------------- */
@@ -864,6 +1171,11 @@
       updateGenCount();
     });
     $("analyze-go").addEventListener("click", analyzeCommunity);
+
+    // Inbox
+    $("inbox-list").addEventListener("click", onInboxClick);
+    $("threads-host").addEventListener("click", onInboxClick);
+    $("inbox-threshold").addEventListener("change", renderInbox);
 
     // Ideas
     $("idea-add").addEventListener("click", addIdea);

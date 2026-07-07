@@ -102,11 +102,16 @@ copy) — it never clicks or posts for you.
   samples under "flight data" which may include real post text, so skim
   before sharing. This is the fastest path to getting extraction fixed for
   real.
-- **Comments never sync, even though posts do** — this is expected for now.
-  Skool's community feed page only sends a *comment count* per post, not the
-  actual comment text — that only loads once you open an individual post.
-  Comment syncing needs its own extraction pass from the post-detail page,
-  which isn't wired up yet.
+- **Comments/threads aren't syncing** — Skool's community *feed* only carries a
+  comment count, not the text. Comment threads sync when you open an
+  **individual post** (its detail page carries the full tree). So browse into a
+  few posts with the extension active; the **Inbox → Conversations** view fills
+  in from there. If a post's thread still doesn't appear, capture a page report
+  from that post's page (not the feed) and share it so extraction can be tuned.
+- **"Post on Skool" says it needs to learn first** — posting a reply replays
+  Skool's own request, which the extension learns from you: reply to any one
+  comment *manually* on Skool once, then the button can post directly. Until
+  then it copies your reply and opens the post so you can paste and send.
 - **"No admin access detected" on a community you DO admin** — Skool's
   markup changed and automatic detection missed it. Open the side panel,
   select the community, and tick **"Force-enable scraping here"**, then

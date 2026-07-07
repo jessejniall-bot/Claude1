@@ -58,6 +58,7 @@ create table if not exists public.scraped_posts (
   id                uuid primary key default gen_random_uuid(),
   community_id      uuid not null references public.communities (id) on delete cascade,
   post_key          text not null,    -- Skool post id when available, else content hash
+  post_name         text,             -- Skool URL slug segment, for deep-linking back
   post_text         text not null default '',
   pillar_guess      text,             -- pillar slug from the keyword classifier
   likes             int  not null default 0,
@@ -77,20 +78,24 @@ create index if not exists scraped_posts_community_posted_idx
 -- scraped_comments — comment-level data for participation & health analysis
 -- ---------------------------------------------------------------------------
 create table if not exists public.scraped_comments (
-  id            uuid primary key default gen_random_uuid(),
-  community_id  uuid not null references public.communities (id) on delete cascade,
-  comment_key   text not null,     -- Skool comment id when available, else content hash
-  post_key      text,              -- best-effort link to scraped_posts.post_key
-  comment_text  text not null default '',
-  author        text,
-  likes         int  not null default 0,
-  commented_at  timestamptz,
-  scraped_at    timestamptz not null default now(),
+  id                  uuid primary key default gen_random_uuid(),
+  community_id        uuid not null references public.communities (id) on delete cascade,
+  comment_key         text not null,   -- Skool comment id when available, else content hash
+  post_key            text,            -- best-effort link to scraped_posts.post_key
+  parent_comment_key  text,            -- Skool id of the parent comment; null = top-level
+  comment_text        text not null default '',
+  author              text,
+  is_owner            boolean not null default false, -- comment authored by the community owner
+  likes               int  not null default 0,
+  commented_at        timestamptz,
+  scraped_at          timestamptz not null default now(),
   unique (community_id, comment_key)
 );
 
 create index if not exists scraped_comments_community_time_idx
   on public.scraped_comments (community_id, commented_at desc);
+create index if not exists scraped_comments_post_idx
+  on public.scraped_comments (community_id, post_key);
 
 -- ---------------------------------------------------------------------------
 -- ideas — captured seeds (member comments, health flags, manual notes)
@@ -138,6 +143,29 @@ create table if not exists public.queue (
   created_at     timestamptz not null default now()
 );
 
+-- ---------------------------------------------------------------------------
+-- reply_queue — replies composed anywhere (e.g. the PWA, which has no live
+-- Skool session) waiting for the extension to submit them from the live tab.
+-- target_post_key / target_comment_key are Skool's own ids; parent null means
+-- a top-level comment on the post, otherwise a reply to that comment.
+-- ---------------------------------------------------------------------------
+create table if not exists public.reply_queue (
+  id                  uuid primary key default gen_random_uuid(),
+  community_id        uuid not null references public.communities (id) on delete cascade,
+  target_post_key     text not null,
+  target_comment_key  text,            -- null = reply to the post; else reply to this comment
+  reply_text          text not null,
+  context_text        text not null default '', -- the comment being replied to, for display
+  status              text not null default 'pending'
+                      check (status in ('pending', 'submitting', 'submitted', 'failed', 'cancelled')),
+  error               text,
+  created_at          timestamptz not null default now(),
+  submitted_at        timestamptz
+);
+
+create index if not exists reply_queue_pending_idx
+  on public.reply_queue (community_id, status, created_at);
+
 -- ============================================================================
 -- Row-level security — everything scoped to the owning user
 -- ============================================================================
@@ -149,6 +177,7 @@ alter table public.scraped_comments enable row level security;
 alter table public.ideas          enable row level security;
 alter table public.drafts         enable row level security;
 alter table public.queue          enable row level security;
+alter table public.reply_queue    enable row level security;
 
 create policy "own communities"
   on public.communities for all
@@ -172,6 +201,7 @@ create policy "own scraped comments" on public.scraped_comments for all using (p
 create policy "own ideas"          on public.ideas          for all using (public.owns_community(community_id)) with check (public.owns_community(community_id));
 create policy "own drafts"         on public.drafts         for all using (public.owns_community(community_id)) with check (public.owns_community(community_id));
 create policy "own queue"          on public.queue          for all using (public.owns_community(community_id)) with check (public.owns_community(community_id));
+create policy "own reply queue"    on public.reply_queue    for all using (public.owns_community(community_id)) with check (public.owns_community(community_id));
 
 -- ============================================================================
 -- Seed data — default pillar library + empty voice profile per new community

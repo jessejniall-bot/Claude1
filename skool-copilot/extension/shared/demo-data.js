@@ -63,6 +63,7 @@
       var postedAt = now - (i * 2 + 1) * DAY;
       return mk({
         post_key: "demo-post-" + i,
+        post_name: "demo-post-" + i + "-" + s[0],
         post_text: s[1] + "\n\nSample body text for this " + s[0] + " post.",
         pillar_guess: s[0],
         likes: s[2],
@@ -90,14 +91,32 @@
     ];
     var comments = [];
     for (var i = 0; i < 34; i++) {
+      var mParent = "demo-comment-" + i;
       comments.push(mk({
-        comment_key: "demo-comment-" + i,
+        comment_key: mParent,
         post_key: "demo-post-" + (i % posts.length),
+        parent_comment_key: null,
         comment_text: commentTexts[i % commentTexts.length],
         author: commenters[i % commenters.length],
+        is_owner: false,
         likes: i % 4,
         commented_at: new Date(now - (i % 26) * DAY - 5 * 3600000).toISOString(),
       }));
+      // The owner has replied to roughly every third comment — a nested reply,
+      // authored by the owner, timestamped just after. The rest stay open so
+      // the needs-response inbox has real items to show.
+      if (i % 3 === 0) {
+        comments.push(mk({
+          comment_key: "demo-owner-reply-" + i,
+          post_key: "demo-post-" + (i % posts.length),
+          parent_comment_key: mParent,
+          comment_text: "Great point — appreciate you jumping in here! Let me follow up with more.",
+          author: "You (owner)",
+          is_owner: true,
+          likes: 1,
+          commented_at: new Date(now - (i % 26) * DAY - 4 * 3600000).toISOString(),
+        }));
+      }
     }
 
     return {
@@ -276,6 +295,21 @@
       "(Sample draft — add your own AI key in Settings to generate real ones.)\n\n" +
       "What would you add to this list?"
     );
+  };
+
+  SC.demoReply = function (author, commentText) {
+    var name = (author || "").split(" ")[0] || "there";
+    return "Great question, " + name + " — yes, this works even under 50 members; " +
+      "if anything it's easier to keep the conversation tight when you're smaller. " +
+      "Want me to share the exact steps I used? (Sample reply — add your AI key in " +
+      "Settings for real ones.)";
+  };
+
+  SC.demoThreadSummary = function (flat) {
+    return "A member asked whether the approach works for small communities; another " +
+      "chimed in that they'd tried something similar. One open question is aimed at " +
+      "you (\"can you do a live walkthrough?\") and still needs a reply.\n\n" +
+      "(Sample summary — add your AI key in Settings for real ones.)";
   };
 
   SC.demoReview = function (digestLines) {

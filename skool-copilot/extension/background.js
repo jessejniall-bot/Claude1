@@ -108,6 +108,7 @@ async function handleScrapedPosts(msg) {
       return {
         community_id: community.id,
         post_key: String(p.post_key),
+        post_name: p.post_name || null,
         post_text: (p.post_text || "").slice(0, 8000),
         pillar_guess: guess.pillar,
         likes: Number(p.likes) || 0,
@@ -140,8 +141,10 @@ async function handleScrapedComments(msg) {
         community_id: community.id,
         comment_key: String(c.comment_key),
         post_key: c.post_key || null,
+        parent_comment_key: c.parent_comment_key || null,
         comment_text: (c.comment_text || "").slice(0, 4000),
         author: c.author || null,
+        is_owner: !!c.is_owner,
         likes: Number(c.likes) || 0,
         commented_at: c.commented_at || null,
       };
@@ -152,6 +155,49 @@ async function handleScrapedComments(msg) {
     .from("scraped_comments")
     .upsert(rows, { onConflict: "community_id,comment_key" });
   return { ok: true, saved: rows.length };
+}
+
+/* ------------------------- reply queue ----------------------------- */
+// The PWA composes replies but has no live Skool session, so it enqueues
+// them here; the extension drains the queue when it sees the matching tab.
+
+async function pendingRepliesForSlug(slug) {
+  var client = await SC.getClient();
+  if (!client) return { ok: false, error: "Backend not configured" };
+  var communities = await getCommunities();
+  var community = findCommunity(communities, slug);
+  if (!community) return { ok: true, replies: [] };
+  var rows = await client
+    .from("reply_queue")
+    .select("id,target_post_key,target_comment_key,reply_text,context_text,status,created_at")
+    .eq("community_id", community.id)
+    .eq("status", "pending")
+    .order("created_at")
+    .limit(50);
+  return { ok: true, communityId: community.id, replies: rows || [] };
+}
+
+async function handleListPendingReplies(msg) {
+  return pendingRepliesForSlug(msg.slug);
+}
+
+async function handleMarkReply(msg) {
+  var client = await SC.getClient();
+  if (!client) return { ok: false, error: "Backend not configured" };
+  var patch = { status: msg.status };
+  if (msg.status === "submitted") patch.submitted_at = new Date().toISOString();
+  if (msg.error !== undefined) patch.error = msg.error ? String(msg.error).slice(0, 500) : null;
+  await client.from("reply_queue").update(patch).eq("id", msg.id);
+  return { ok: true };
+}
+
+// Drain: for a freshly-loaded Skool tab, ask the backend for any pending
+// replies for that community and hand them to the content script to submit,
+// one at a time with spacing so a batch never fires as a burst.
+async function handleDrainReplies(msg) {
+  var res = await pendingRepliesForSlug(msg.slug);
+  if (!res.ok || !res.replies || !res.replies.length) return { ok: true, submitted: 0 };
+  return { ok: true, communityId: res.communityId, replies: res.replies };
 }
 
 async function handleSaveIdea(msg) {
@@ -174,6 +220,9 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
   else if (msg && msg.type === "SCRAPED_POSTS") handler = handleScrapedPosts;
   else if (msg && msg.type === "SCRAPED_COMMENTS") handler = handleScrapedComments;
   else if (msg && msg.type === "SAVE_IDEA") handler = handleSaveIdea;
+  else if (msg && msg.type === "LIST_PENDING_REPLIES") handler = handleListPendingReplies;
+  else if (msg && msg.type === "DRAIN_REPLIES") handler = handleDrainReplies;
+  else if (msg && msg.type === "MARK_REPLY") handler = handleMarkReply;
   else if (msg && msg.type === "REFRESH_COMMUNITIES") {
     refreshCommunities()
       .then(function (rows) { sendResponse({ ok: true, communities: rows || [] }); })

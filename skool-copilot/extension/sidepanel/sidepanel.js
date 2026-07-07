@@ -191,6 +191,140 @@
       ? "Most overdue pillar: " + overdue.name + " (" + overdue.actualPct +
         "% actual vs " + overdue.targetPct + "% target)"
       : "No pillar data yet — browse your community with the extension active to collect posts.";
+
+    renderInbox();
+  }
+
+  /* ------------------------ needs-response inbox ------------------- */
+
+  function ownerNamesFromData() {
+    var names = {};
+    (comments || []).forEach(function (c) { if (c.is_owner && c.author) names[c.author] = true; });
+    return Object.keys(names);
+  }
+
+  function renderInbox() {
+    var host = $("sp-inbox");
+    var status = $("sp-inbox-status");
+    if (!current) { host.innerHTML = ""; return; }
+    var items = SC.health.needsResponse(posts, comments, {
+      thresholdHours: 24, ownerNames: ownerNamesFromData(),
+    });
+    if (!items.length) {
+      status.textContent = comments.length
+        ? "✅ Nothing waiting — you're caught up."
+        : "No comments scraped yet. Open individual posts on Skool to collect threads.";
+      host.innerHTML = "";
+      return;
+    }
+    status.textContent = items.length + " waiting.";
+    host.innerHTML = "";
+    items.slice(0, 15).forEach(function (item) {
+      var div = document.createElement("div");
+      div.className = "sugg";
+      div._item = item;
+      var wait = item.waitingHours >= 48
+        ? Math.round(item.waitingHours / 24) + "d" : item.waitingHours + "h";
+      div.innerHTML =
+        '<div class="head"><span class="who">' + escapeHtml(item.author || "Member") +
+        '</span><span class="counts">waiting ' + wait + "</span></div>" +
+        '<div class="snippet">' + escapeHtml((item.text || "").slice(0, 140)) + "</div>" +
+        '<div class="row"><button class="btn small" data-act="suggest">✨ Suggest</button></div>' +
+        '<div class="reply-wrap hidden">' +
+        '<textarea class="reply-text" rows="3" autocapitalize="sentences" autocorrect="off"></textarea>' +
+        '<div class="row">' +
+        '<button class="btn small primary" data-act="post">📤 Post on Skool</button>' +
+        '<button class="btn small" data-act="copy">📋 Copy</button>' +
+        "</div><p class='muted inbox-item-status'></p></div>";
+      host.appendChild(div);
+    });
+  }
+
+  async function draftReplyFor(item) {
+    var settings = (await SC.storage.get("sc_ai_settings")) || {};
+    if (!settings.provider) throw new Error("No AI provider configured. Open Settings.");
+    var apiKey = await SC.vault.loadApiKey(settings.provider);
+    if (!apiKey) throw new Error("No API key stored for " + settings.provider + ". Open Settings.");
+    var voiceRows = await client.from("voice_profiles").select("*")
+      .eq("community_id", current.id).limit(1);
+    var voice = (voiceRows && voiceRows[0]) || {};
+    var post = posts.find(function (p) { return p.post_key === item.post_key; });
+    return SC.generateDraft({
+      provider: settings.provider, apiKey: apiKey, model: settings.model,
+      system: SC.COMMENT_REPLY_SYSTEM_PROMPT, maxTokens: 600,
+      prompt: SC.buildCommentReplyPrompt({
+        communityName: current.name, voice: voice,
+        postText: post ? post.post_text : "",
+        comment: { author: item.author, text: item.text },
+      }),
+    });
+  }
+
+  function postReplyOnPage(item, text) {
+    return new Promise(function (resolve) {
+      chrome.tabs.query({ active: true, lastFocusedWindow: true }, function (tabs) {
+        var tab = tabs && tabs[0];
+        if (!tab || !tab.url || tab.url.indexOf("skool.com") === -1) {
+          resolve({ ok: false, code: "no_tab" }); return;
+        }
+        chrome.tabs.sendMessage(tab.id, {
+          type: "SUBMIT_ON_PAGE_REPLY", text: text,
+          postKey: item.post_key, parentCommentKey: item.comment_key || "",
+        }, function (res) {
+          if (chrome.runtime.lastError) { resolve({ ok: false, code: "no_tab" }); return; }
+          resolve(res || { ok: false, error: "No response from page." });
+        });
+      });
+    });
+  }
+
+  function communityBase() {
+    var slug = current && (current.slug || SC.skoolSlug(current.skool_url));
+    return "https://www.skool.com/" + (slug || "");
+  }
+  function postDeepLink(item) {
+    var post = posts.find(function (p) { return p.post_key === item.post_key; });
+    return post && post.post_name ? communityBase() + "/" + post.post_name : communityBase();
+  }
+
+  async function onInboxClick(e) {
+    var btn = e.target.closest("button[data-act]");
+    if (!btn) return;
+    var card = btn.closest(".sugg");
+    if (!card) return;
+    var item = card._item;
+    var wrap = card.querySelector(".reply-wrap");
+    var ta = card.querySelector(".reply-text");
+    var st = card.querySelector(".inbox-item-status");
+    var act = btn.dataset.act;
+
+    if (act === "suggest") {
+      wrap.classList.remove("hidden");
+      btn.disabled = true;
+      var old = btn.textContent; btn.textContent = "Drafting…";
+      try { ta.value = (await draftReplyFor(item)).trim(); }
+      catch (err) { if (st) st.textContent = "❌ " + err.message; }
+      finally { btn.disabled = false; btn.textContent = old; }
+    } else if (act === "copy") {
+      navigator.clipboard.writeText(ta.value).then(function () { if (st) st.textContent = "✅ Copied"; });
+    } else if (act === "post") {
+      if (!ta.value.trim()) { if (st) st.textContent = "Write a reply first."; return; }
+      btn.disabled = true; if (st) st.textContent = "Posting…";
+      var res = await postReplyOnPage(item, ta.value);
+      if (res.ok) {
+        if (st) st.textContent = "✅ Posted to Skool.";
+      } else if (res.code === "no_template" || res.code === "not_active" || res.code === "no_tab") {
+        // Fall back to copy + open the post so it's paste-and-send.
+        try { await navigator.clipboard.writeText(ta.value); } catch (e2) {}
+        window.open(postDeepLink(item), "_blank", "noopener");
+        if (st) st.textContent = res.code === "no_template"
+          ? "Copied — reply to one comment manually on Skool once so I can learn how to post, then this posts directly."
+          : "Copied & opened Skool — paste and send.";
+      } else {
+        if (st) st.textContent = "❌ " + (res.error || "Couldn't post.");
+      }
+      btn.disabled = false;
+    }
   }
 
   function escapeHtml(s) {
@@ -507,6 +641,7 @@
     selectCommunity(e.target.value);
   });
   $("sp-generate").addEventListener("click", generate);
+  $("sp-inbox").addEventListener("click", onInboxClick);
   $("sp-read").addEventListener("click", readAndSuggest);
   $("sp-report").addEventListener("click", capturePageReport);
   $("sp-report-copy").addEventListener("click", function () {
