@@ -170,3 +170,10 @@ textarea { resize: vertical; }
   overflow-x: auto;
 }
 #sp-report-box { margin-top: 8px; }
+
+/* needs-response inbox */
+.reply-wrap { margin-top: 6px; }
+.reply-wrap.hidden { display: none; }
+.reply-text { width: 100%; font-size: 15px; line-height: 1.5; min-height: 70px; }
+.inbox-item-status { min-height: 1em; margin: 4px 0 0; }
+textarea:focus, input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }

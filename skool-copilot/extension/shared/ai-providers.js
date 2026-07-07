@@ -344,4 +344,80 @@
     "like the owner, match the requested content pillar, and are built to spark " +
     "member replies. You never mention that you are an AI, never use hashtags, and " +
     "you follow the voice profile exactly.";
+
+  /* ------------------ single comment reply draft ------------------- */
+  // One-tap "suggest a reply" to a specific incoming comment. Reuses the
+  // voice profile — no second voice system. Returns plain reply text, no JSON.
+
+  SC.COMMENT_REPLY_SYSTEM_PROMPT =
+    "You are a Skool community owner replying to one member's comment. Write a " +
+    "single reply in the owner's voice: warm, specific to what the member " +
+    "actually said, short, and human. Address the member by first name when it " +
+    "is known. Never generic praise, never mention AI, no hashtags, no sign-off " +
+    "signature. Output only the reply text — no quotes, no preamble.";
+
+  // buildCommentReplyPrompt({communityName, voice, postText, comment:{author,text},
+  //                          thread:[{author,text}]})
+  SC.buildCommentReplyPrompt = function (ctx) {
+    var voice = ctx.voice || {};
+    var comment = ctx.comment || {};
+    var lines = [];
+    lines.push("Community: " + (ctx.communityName || "my community"));
+    if (voice.tone_notes) lines.push("Owner's voice: " + voice.tone_notes);
+    if (voice.formatting_rules) lines.push("Formatting rules: " + voice.formatting_rules);
+    if (voice.banned_words && voice.banned_words.length) {
+      lines.push("Never use these words: " + voice.banned_words.join(", "));
+    }
+    if (ctx.postText) {
+      lines.push("");
+      lines.push("The post this conversation is under:");
+      lines.push(String(ctx.postText).replace(/\s+/g, " ").slice(0, 500));
+    }
+    if (ctx.thread && ctx.thread.length) {
+      lines.push("");
+      lines.push("Earlier in the thread (oldest first):");
+      ctx.thread.slice(-6).forEach(function (t) {
+        lines.push("- " + (t.author || "member") + ": " +
+          String(t.text || "").replace(/\s+/g, " ").slice(0, 200));
+      });
+    }
+    lines.push("");
+    lines.push("Reply to this comment from " + (comment.author || "a member") + ":");
+    lines.push(String(comment.text || "").replace(/\s+/g, " ").slice(0, 600));
+    lines.push("");
+    lines.push("Write only the owner's reply. One to three sentences. If the member " +
+      "asked a question, answer it directly; if they shared something, respond to " +
+      "the specific thing they shared.");
+    return lines.join("\n");
+  };
+
+  /* --------------------- thread summarization ---------------------- */
+  // Collapse a long comment chain into a few lines so the owner can catch up
+  // without reading top to bottom. One AI call.
+
+  SC.THREAD_SUMMARY_SYSTEM_PROMPT =
+    "You summarize a Skool comment thread for the community owner so they can " +
+    "catch up fast. Be concise and concrete. Surface any direct questions to the " +
+    "owner and anything that needs a response. Plain text, no markdown headers.";
+
+  // buildThreadSummaryPrompt({postText, comments:[{author,text,depth}]})
+  SC.buildThreadSummaryPrompt = function (ctx) {
+    var lines = [];
+    if (ctx.postText) {
+      lines.push("Post:");
+      lines.push(String(ctx.postText).replace(/\s+/g, " ").slice(0, 600));
+      lines.push("");
+    }
+    lines.push("Comment thread (oldest first, indentation shows replies):");
+    (ctx.comments || []).forEach(function (c) {
+      var indent = "  ".repeat(Math.min(Number(c.depth) || 0, 4));
+      lines.push(indent + "- " + (c.author || "member") + ": " +
+        String(c.text || "").replace(/\s+/g, " ").slice(0, 240));
+    });
+    lines.push("");
+    lines.push("Summarize in at most 5 short lines: the gist of the discussion, any " +
+      "open questions aimed at the owner, and whether the owner still needs to reply. " +
+      "If nothing needs a response, say so.");
+    return lines.join("\n");
+  };
 })(typeof globalThis !== "undefined" ? (globalThis.SC = globalThis.SC || {}) : {});

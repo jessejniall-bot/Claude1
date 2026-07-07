@@ -14,6 +14,7 @@ require("../extension/shared/pillar-classifier.js");
 require("../extension/shared/health-engine.js");
 require("../extension/shared/ai-providers.js");
 require("../extension/shared/unicode-style.js");
+require("../extension/shared/reply-template.js");
 
 const SC = globalThis.SC;
 const DAY = 86400000;
@@ -158,6 +159,110 @@ check("double-styling is a no-op", SC.uni.style(b, "bold") === b);
 check("italic transforms", SC.uni.isStyled(SC.uni.style("hello", "italic")));
 check("punctuation and emoji pass through",
   SC.uni.style("a! 🎉", "bold").endsWith("! 🎉"));
+
+/* ---------------------- v2: needs-response ----------------------- */
+console.log("needs-response inbox");
+{
+  const T = new Date("2026-02-05T00:00:00Z").getTime();
+  const qpost = {
+    post_key: "P9", post_text: "What should our next workshop be?", is_question: true,
+    comments: 0, posted_at: new Date(T - 3 * DAY).toISOString(), author: "You",
+  };
+  const cs = [
+    { comment_key: "M1", post_key: "P1", parent_comment_key: null, author: "Ben",
+      is_owner: false, comment_text: "Does this work under 50 members?",
+      commented_at: new Date(T - 2 * DAY).toISOString() },
+    { comment_key: "O1", post_key: "P1", parent_comment_key: "M1", author: "You",
+      is_owner: true, comment_text: "Yes it does!", commented_at: new Date(T - 1 * DAY).toISOString() },
+    { comment_key: "M2", post_key: "P2", parent_comment_key: null, author: "Cara",
+      is_owner: false, comment_text: "Saving this!", commented_at: new Date(T - 2 * DAY).toISOString() },
+  ];
+  const nr = SC.health.needsResponse([qpost], cs, { now: T, thresholdHours: 24 });
+  const keys = nr.map((x) => x.comment_key);
+  check("needsResponse: answered comment excluded", keys.indexOf("M1") === -1, keys);
+  check("needsResponse: owner comment excluded", keys.indexOf("O1") === -1);
+  check("needsResponse: unanswered comment surfaces", keys.indexOf("M2") !== -1);
+  check("needsResponse: unanswered question post surfaces",
+    nr.some((x) => x.kind === "post" && x.post_key === "P9"));
+  check("needsResponse: sorted by wait desc",
+    nr.length >= 2 ? nr[0].waitingHours >= nr[nr.length - 1].waitingHours : true);
+  check("needsResponse: ownerNames fallback works",
+    SC.health.needsResponse([], [
+      { comment_key: "X", post_key: "P", author: "Owner Name", comment_text: "hi",
+        commented_at: new Date(T - 2 * DAY).toISOString() },
+    ], { now: T, thresholdHours: 24, ownerNames: ["Owner Name"] }).length === 0);
+}
+
+/* ------------------------- v2: threading ------------------------- */
+console.log("threading");
+{
+  const cs = [
+    { comment_key: "C1", post_key: "P1", parent_comment_key: null, comment_text: "top",
+      commented_at: "2026-02-02T01:00:00Z" },
+    { comment_key: "C2", post_key: "P1", parent_comment_key: "C1", comment_text: "reply",
+      commented_at: "2026-02-02T02:00:00Z" },
+    { comment_key: "C3", post_key: "P1", parent_comment_key: null, comment_text: "another top",
+      commented_at: "2026-02-02T03:00:00Z" },
+    { comment_key: "C4", post_key: "P1", parent_comment_key: "MISSING", comment_text: "orphan",
+      commented_at: "2026-02-02T04:00:00Z" },
+  ];
+  const roots = SC.threads.build(cs);
+  check("threads: two real roots + lifted orphan", roots.length === 3, roots.map((r) => r.comment_key));
+  const c1 = roots.find((r) => r.comment_key === "C1");
+  check("threads: reply nested under parent", c1 && c1.replies.length === 1 && c1.replies[0].comment_key === "C2");
+  check("threads: orphan lifted to top", roots.some((r) => r.comment_key === "C4"));
+  const groups = SC.threads.byPost(cs, [{ post_key: "P1", post_text: "Post one", posted_at: "2026-02-02T00:00:00Z" }]);
+  check("threads.byPost: groups by post", groups.length === 1 && groups[0].count === 4);
+  check("threads.byPost: attaches post", groups[0].post && groups[0].post.post_key === "P1");
+}
+
+/* --------------------- v2: reply templating ---------------------- */
+console.log("reply templating");
+{
+  const RT = SC.replyTemplate;
+  const req = {
+    method: "POST", url: "https://api.skool.com/v1/comments", contentType: "application/json",
+    body: { postId: "abcd1234efgh5678", parentId: "1111222233334444", content: "Yes, it works!" },
+  };
+  const a = RT.recognize(req.method, req.url, req.body);
+  check("recognize: strong for comment POST", a && a.confidence === "strong", a);
+  check("recognize: finds parent", a && a.parentIdPath && a.parentIdPath[0] === "parentId");
+  const tpl = RT.makeTemplate(req, a);
+  check("template: redacts text", tpl.bodyTemplate.indexOf("Yes, it works!") === -1);
+  check("template: redacts ids", tpl.bodyTemplate.indexOf("abcd1234efgh5678") === -1);
+  const filled = RT.fill(tpl, { text: 'He said "hi"\nok', postId: "PP", parentId: "CC" });
+  const parsedBody = JSON.parse(filled.body);
+  check("fill: text round-trips with escaping", parsedBody.content === 'He said "hi"\nok');
+  check("fill: ids substituted", parsedBody.postId === "PP" && parsedBody.parentId === "CC");
+  check("recognize: rejects upvote", RT.recognize("POST", "https://api.skool.com/v1/upvote", { postId: "abcd1234efgh5678" }) === null);
+  check("recognize: rejects GET", RT.recognize("GET", "https://api.skool.com/v1/comments", { content: "a b c", postId: "abcd1234efgh5678" }) === null);
+  const tpl2 = RT.makeTemplate(
+    { method: "POST", url: "https://api.skool.com/posts/abcd1234efgh5678/comments", body: { comment: "hi there", post: "abcd1234efgh5678" } },
+    RT.recognize("POST", "https://api.skool.com/posts/abcd1234efgh5678/comments", { comment: "hi there", post: "abcd1234efgh5678" })
+  );
+  check("template: templates id in URL path", tpl2.url.indexOf("{{POST_ID}}") !== -1, tpl2.url);
+  check("fill: requires postId when template needs it", RT.fill(tpl2, { text: "x" }) === null);
+}
+
+/* ----------------- v2: comment reply + summary prompts ----------- */
+console.log("reply + summary prompts");
+{
+  const rp = SC.buildCommentReplyPrompt({
+    communityName: "T", voice: { tone_notes: "warm", banned_words: ["synergy"] },
+    postText: "How I onboard members", comment: { author: "Ben", text: "Does this scale?" },
+    thread: [{ author: "Cara", text: "same question" }],
+  });
+  check("reply prompt: includes comment", rp.includes("Does this scale?"));
+  check("reply prompt: includes author", rp.includes("Ben"));
+  check("reply prompt: includes voice", rp.includes("warm") && rp.includes("synergy"));
+  check("reply prompt: includes thread context", rp.includes("same question"));
+  const sp = SC.buildThreadSummaryPrompt({
+    postText: "Post body",
+    comments: [{ author: "Ben", text: "q1", depth: 0 }, { author: "You", text: "a1", depth: 1 }],
+  });
+  check("summary prompt: includes comments", sp.includes("q1") && sp.includes("a1"));
+  check("summary prompt: indents replies", sp.includes("  - You"));
+}
 
 /* ------------------------------ done ----------------------------- */
 if (failures) {

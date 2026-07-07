@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Skool Community Copilot",
-  "version": "0.3.3",
-  "description": "Scans your own Skool community's feed for content health and drafts on-pillar, on-voice posts with your own AI key.",
+  "version": "0.4.0",
+  "description": "Scans your own Skool community for content health, threads member comments, drafts on-voice posts and replies, and can post replies from the live tab — all with your own AI key.",
   "permissions": ["storage", "alarms", "sidePanel", "tabs"],
   "host_permissions": [
     "https://www.skool.com/*",
@@ -21,10 +21,20 @@
       "js": [
         "shared/config.js",
         "shared/pillar-classifier.js",
+        "shared/reply-template.js",
         "content/scraper.js"
       ],
       "css": ["content/capture.css"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.skool.com/*", "https://*.skool.com/*"],
+      "js": [
+        "shared/reply-template.js",
+        "content/net-observer.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start"
     },
     {
       "matches": [

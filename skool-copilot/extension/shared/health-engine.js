@@ -301,6 +301,87 @@
     };
   };
 
+  /* ----------------- needs-response inbox --------------------------- */
+  // Turns the response-latency number into something actionable: the actual
+  // member comments/questions that have sat past the response window with
+  // nothing back from the owner yet. Two sources:
+  //   1. Question posts with zero comments, older than the threshold.
+  //   2. Member comments (not the owner's) on a post where the owner has not
+  //      commented *after* them, older than the threshold.
+  // `comments` rows may carry is_owner + parent_comment_key (v2 scrape); when
+  // they don't (older data) we fall back to matching the owner's author name.
+  SC.health.needsResponse = function (posts, comments, opts) {
+    var now = (opts && opts.now) || Date.now();
+    var thresholdHours = (opts && opts.thresholdHours) || 24;
+    var ownerNames = (opts && opts.ownerNames) || [];
+    var cutoff = thresholdHours * 60 * 60 * 1000;
+    var lc = function (s) { return String(s || "").trim().toLowerCase(); };
+    var ownerSet = {};
+    ownerNames.forEach(function (n) { if (n) ownerSet[lc(n)] = true; });
+
+    function isOwner(row) {
+      if (row && row.is_owner) return true;
+      return !!ownerSet[lc(row && row.author)];
+    }
+
+    var items = [];
+
+    // Source 1: unanswered question posts.
+    datedPosts(posts).forEach(function (x) {
+      var p = x.post;
+      if (!p.is_question) return;
+      if ((Number(p.comments) || 0) > 0) return;
+      var ageMs = now - x.t;
+      if (ageMs <= cutoff) return;
+      items.push({
+        kind: "post",
+        post_key: p.post_key || null,
+        comment_key: null,
+        author: p.author || null,
+        text: (p.post_text || "").split("\n")[0].slice(0, 200),
+        at: p.posted_at,
+        waitingHours: Math.round(ageMs / 3600000),
+      });
+    });
+
+    // Index comments by post so we can tell whether the owner already replied
+    // somewhere after a given member comment.
+    var byPost = {};
+    (comments || []).forEach(function (c) {
+      var key = c.post_key || "(none)";
+      (byPost[key] = byPost[key] || []).push(c);
+    });
+
+    (comments || []).forEach(function (c) {
+      if (isOwner(c)) return;
+      var t = ts(c.commented_at);
+      if (t === null) return;
+      var ageMs = now - t;
+      if (ageMs <= cutoff) return;
+      // Has the owner replied on this post after this comment?
+      var siblings = byPost[c.post_key || "(none)"] || [];
+      var answered = siblings.some(function (o) {
+        if (!isOwner(o)) return false;
+        var ot = ts(o.commented_at);
+        return ot !== null && ot >= t;
+      });
+      if (answered) return;
+      items.push({
+        kind: "comment",
+        post_key: c.post_key || null,
+        comment_key: c.comment_key || null,
+        parent_comment_key: c.parent_comment_key || null,
+        author: c.author || null,
+        text: (c.comment_text || "").replace(/\s+/g, " ").slice(0, 300),
+        at: c.commented_at,
+        waitingHours: Math.round(ageMs / 3600000),
+      });
+    });
+
+    items.sort(function (a, b) { return b.waitingHours - a.waitingHours; });
+    return items;
+  };
+
   /* ------------------- overall community health -------------------- */
   // A 0-100 verdict built from five weighted components. Neutral scores
   // are used where there isn't enough data yet, so a fresh community
@@ -498,5 +579,74 @@
       lines.push("Average time to first reply on questions: " + latency.avgFirstReplyHours + "h");
     }
     return lines;
+  };
+
+  /* ============================ threading =========================== */
+  // Assemble flat scraped_comments rows into nested threads, client-side.
+  // A comment nests under another when its parent_comment_key matches that
+  // comment's comment_key; everything else is treated as top-level on its
+  // post. Orphans (parent not present in the data) are lifted to top level so
+  // nothing is ever dropped from view.
+  SC.threads = SC.threads || {};
+
+  // build(comments) -> array of roots, each: { ...comment, replies: [...] },
+  // sorted oldest-first at every level.
+  SC.threads.build = function (comments) {
+    var byKey = {};
+    var nodes = (comments || []).map(function (c) {
+      var node = {};
+      for (var k in c) if (Object.prototype.hasOwnProperty.call(c, k)) node[k] = c[k];
+      node.replies = [];
+      if (node.comment_key) byKey[node.comment_key] = node;
+      return node;
+    });
+
+    var roots = [];
+    nodes.forEach(function (n) {
+      var parentKey = n.parent_comment_key;
+      if (parentKey && byKey[parentKey] && byKey[parentKey] !== n) {
+        byKey[parentKey].replies.push(n);
+      } else {
+        roots.push(n); // top-level, or orphaned reply lifted to the top
+      }
+    });
+
+    var sortByTime = function (a, b) {
+      var at = a.commented_at ? new Date(a.commented_at).getTime() : 0;
+      var bt = b.commented_at ? new Date(b.commented_at).getTime() : 0;
+      return at - bt;
+    };
+    (function sortTree(list) {
+      list.sort(sortByTime);
+      list.forEach(function (n) { if (n.replies.length) sortTree(n.replies); });
+    })(roots);
+    return roots;
+  };
+
+  // Group comments by their post_key and return per-post threads, so a UI can
+  // show "post → its whole conversation". posts is optional; when given, the
+  // returned groups carry the matching post row for context and are ordered by
+  // the post's recency.
+  SC.threads.byPost = function (comments, posts) {
+    var groups = {};
+    (comments || []).forEach(function (c) {
+      var key = c.post_key || "(none)";
+      (groups[key] = groups[key] || []).push(c);
+    });
+    var postByKey = {};
+    (posts || []).forEach(function (p) { if (p.post_key) postByKey[p.post_key] = p; });
+
+    return Object.keys(groups).map(function (key) {
+      return {
+        post_key: key === "(none)" ? null : key,
+        post: postByKey[key] || null,
+        roots: SC.threads.build(groups[key]),
+        count: groups[key].length,
+      };
+    }).sort(function (a, b) {
+      var at = a.post && a.post.posted_at ? new Date(a.post.posted_at).getTime() : 0;
+      var bt = b.post && b.post.posted_at ? new Date(b.post.posted_at).getTime() : 0;
+      return bt - at;
+    });
   };
 })(typeof globalThis !== "undefined" ? (globalThis.SC = globalThis.SC || {}) : {});

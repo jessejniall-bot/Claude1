@@ -63,6 +63,70 @@
     return null;
   }
 
+  // For a comment, resolve the POST it belongs to and (if it's a reply) the
+  // parent COMMENT it replies to. Keys are separated so a top-level comment
+  // (whose only ref is the post) doesn't get mistaken for a nested reply.
+  var POST_REF_KEYS = ["postId", "post_id", "rootId", "root_id"];
+  var COMMENT_PARENT_KEYS = ["parentId", "parent_id", "parentCommentId",
+    "parent_comment_id", "replyToId", "reply_to_id", "inReplyToId"];
+
+  function refId(v) {
+    if (typeof v === "string" && v) return v;
+    if (v && typeof v === "object" && typeof v.id === "string") return v.id;
+    return null;
+  }
+  function postRefOf(obj) {
+    for (var i = 0; i < POST_REF_KEYS.length; i++) {
+      var id = refId(obj[POST_REF_KEYS[i]]);
+      if (id && id !== obj.id) return id;
+    }
+    if (obj.post && typeof obj.post === "object") return refId(obj.post) || (obj.post.id || null);
+    return null;
+  }
+  // The immediate parent comment id, or null when this is top-level. A parent
+  // ref equal to the post id means "directly on the post" → not a reply.
+  function commentParentOf(obj, postKey) {
+    for (var i = 0; i < COMMENT_PARENT_KEYS.length; i++) {
+      var id = refId(obj[COMMENT_PARENT_KEYS[i]]);
+      if (id && id !== postKey && id !== obj.id) return id;
+    }
+    return null;
+  }
+
+  // Identity of the currently logged-in user (the owner), read from a few
+  // known __NEXT_DATA__ locations, so comments the owner already left can be
+  // flagged is_owner and excluded from the needs-response inbox.
+  var OWNER_PATHS = [
+    "props.pageProps.currentUser",
+    "props.pageProps.user",
+    "props.pageProps.auth.user",
+    "props.pageProps.session.user",
+    "props.pageProps.me",
+  ];
+  function detectOwnerIdent(data) {
+    if (!data) return { id: null, name: null };
+    for (var i = 0; i < OWNER_PATHS.length; i++) {
+      var u = dig(data, OWNER_PATHS[i]);
+      if (u && typeof u === "object") {
+        var name = authorName(u) || u.name || null;
+        if (u.id || name) return { id: u.id || null, name: name };
+      }
+    }
+    return { id: null, name: null };
+  }
+  function commentIsOwner(obj, ownerIdent) {
+    if (!ownerIdent) return false;
+    var user = obj.user || obj.author || {};
+    if (ownerIdent.id && (user.id === ownerIdent.id)) return true;
+    var nm = authorName(user);
+    if (ownerIdent.name && nm && nm.toLowerCase() === String(ownerIdent.name).toLowerCase()) return true;
+    // Skool sometimes flags the group owner/admin inline on the comment.
+    if (obj.isOwner || obj.is_owner) return true;
+    var role = (obj.role || (user && user.role) || "").toString().toLowerCase();
+    if (role === "owner") return true;
+    return false;
+  }
+
   /* ------------------------- slug detection ------------------------ */
 
   function currentSlug() {
@@ -235,6 +299,7 @@
       : Number(rawComments) || 0;
     return {
       post_key: String(id),
+      post_name: obj.name || meta.name || null,
       post_text: text.slice(0, 8000),
       likes: Number(meta.upvotes ?? obj.upvotes ?? meta.likes ?? 0) || 0,
       comments: commentCount,
@@ -316,10 +381,93 @@
     return found;
   }
 
+  // Map one comment object to a storage row, carrying its post + parent-comment
+  // linkage (for threading) and whether the owner wrote it.
+  function extractComment(obj, postKeyHint, parentHint, ownerIdent) {
+    var meta = obj.metadata && typeof obj.metadata === "object" ? obj.metadata : {};
+    var content = meta.content || obj.content || "";
+    if (!String(content).trim()) return null;
+    var id = obj.id || obj.name || meta.id || hashText(String(content));
+    var postKey = postKeyHint || postRefOf(obj);
+    var parentKey = parentHint || commentParentOf(obj, postKey);
+    return {
+      comment_key: String(id),
+      post_key: postKey || null,
+      parent_comment_key: parentKey || null,
+      comment_text: String(content).slice(0, 4000),
+      author: authorName(obj.user || obj.author),
+      is_owner: commentIsOwner(obj, ownerIdent),
+      likes: Number(meta.upvotes ?? obj.upvotes ?? 0) || 0,
+      commented_at: toIso(obj.createdAt || obj.created_at || meta.createdAt),
+    };
+  }
+
+  // Primary path: Skool's post-detail trees carry the full comment tree nested
+  // under each post. We walk it so parent linkage is exact even when a comment
+  // object doesn't carry its own parentId. Child comment lists appear under a
+  // handful of key names; a node may be the comment itself or wrap one.
+  var COMMENT_CHILD_KEYS = ["comments", "children", "replies", "commentTrees", "commentTree"];
+  function extractCommentsFromTrees(root, ownerIdent) {
+    var pageProps = root && root.props && root.props.pageProps;
+    if (!pageProps) return null;
+    var trees = pageProps.postTrees;
+    if (!Array.isArray(trees)) {
+      if (pageProps.postTree) trees = [pageProps.postTree];
+      else if (pageProps.post) trees = [{ post: pageProps.post }];
+      else return null;
+    }
+    var found = [];
+    var seen = new Set();
+
+    function childListsOf(node) {
+      var lists = [];
+      COMMENT_CHILD_KEYS.forEach(function (k) {
+        if (Array.isArray(node[k]) && node[k].length) lists.push(node[k]);
+        if (node.post && Array.isArray(node.post[k]) && node.post[k].length) lists.push(node.post[k]);
+      });
+      return lists;
+    }
+    // A tree child may be {comment:{...}, children:[...]}, {post:{...}}, or a
+    // bare comment object. Unwrap to the comment payload.
+    function commentOf(node) {
+      if (!node || typeof node !== "object") return null;
+      if (node.comment && typeof node.comment === "object") return node.comment;
+      if (node.post && typeof node.post === "object") return node.post;
+      return node;
+    }
+
+    trees.forEach(function (tree) {
+      var post = commentOf(tree);
+      var postKey = (post && (post.id || postRefOf(post))) || null;
+      (function walk(node, parentCommentKey, depth) {
+        if (!node || depth > 12) return;
+        childListsOf(node).forEach(function (list) {
+          list.forEach(function (childNode) {
+            var c = commentOf(childNode);
+            if (!c || typeof c !== "object") return;
+            var row = extractComment(c, postKey, parentCommentKey, ownerIdent);
+            if (row && !seen.has(row.comment_key)) {
+              seen.add(row.comment_key);
+              found.push(row);
+            }
+            // Recurse: this comment's id becomes the parent for its replies.
+            walk(childNode, (row && row.comment_key) || parentCommentKey, depth + 1);
+            if (c !== childNode) walk(c, (row && row.comment_key) || parentCommentKey, depth + 1);
+          });
+        });
+      })(tree, null, 0);
+    });
+    return found.length ? found : null;
+  }
+
   // Walk __NEXT_DATA__ collecting objects that look like member comments:
-  // content + timestamp + a reference to a parent post/comment. Feed pages
-  // expose a few; opening a post exposes the full thread.
+  // content + timestamp + a reference to a parent post/comment. Prefers the
+  // nested tree extraction above; falls back to a flat heuristic walk.
   function collectNextDataComments(root) {
+    var ownerIdent = detectOwnerIdent(root);
+    var direct = extractCommentsFromTrees(root, ownerIdent);
+    if (direct) return direct;
+
     var found = [];
     var seen = new Set();
 
@@ -327,25 +475,9 @@
       if (!obj || typeof obj !== "object" || Array.isArray(obj)) return false;
       var meta = obj.metadata && typeof obj.metadata === "object" ? obj.metadata : obj;
       var hasContent = typeof meta.content === "string" || typeof obj.content === "string";
-      var hasTime = obj.createdAt !== undefined || obj.created_at !== undefined;
+      var hasTime = obj.createdAt !== undefined || obj.created_at !== undefined ||
+        (meta && meta.createdAt !== undefined);
       return hasContent && hasTime && !!parentRef(obj);
-    }
-
-    function extract(obj) {
-      var meta = obj.metadata && typeof obj.metadata === "object" ? obj.metadata : {};
-      var content = meta.content || obj.content || "";
-      if (!String(content).trim()) return null;
-      var id = obj.id || obj.name || hashText(String(content));
-      if (seen.has(id)) return null;
-      seen.add(id);
-      return {
-        comment_key: String(id),
-        post_key: parentRef(obj),
-        comment_text: String(content).slice(0, 4000),
-        author: authorName(obj.user || obj.author),
-        likes: Number(meta.upvotes ?? obj.upvotes ?? 0) || 0,
-        commented_at: toIso(obj.createdAt || obj.created_at),
-      };
     }
 
     var stack = [root];
@@ -359,8 +491,11 @@
         continue;
       }
       if (looksLikeComment(cur)) {
-        var c = extract(cur);
-        if (c) found.push(c);
+        var c = extractComment(cur, null, null, ownerIdent);
+        if (c && !seen.has(c.comment_key)) {
+          seen.add(c.comment_key);
+          found.push(c);
+        }
       }
       for (var k in cur) {
         if (Object.prototype.hasOwnProperty.call(cur, k)) stack.push(cur[k]);
@@ -516,7 +651,67 @@
 
     renderPill();
     renderFab();
-    if (state.active) scheduleScrape();
+    if (state.active) {
+      scheduleScrape();
+      scheduleReplyDrain();
+    }
+  }
+
+  /* --------------------- queued-reply drainer ---------------------- */
+  // Replies composed in the PWA wait in the backend. When we land on the
+  // matching, admin-verified community tab, submit them from here — one at a
+  // time with a randomized gap so a batch never reads as automation. Runs at
+  // most once per pageview and only if a reply template has been learned.
+  var replyDrainStarted = false;
+
+  function jitter(minMs, maxMs) { return minMs + Math.floor(Math.random() * (maxMs - minMs)); }
+
+  function submitViaPage(text, postKey, parentCommentKey) {
+    return new Promise(function (resolve) {
+      chrome.storage.local.get(REPLY_TEMPLATE_KEY, function (o) {
+        var tpl = o && o[REPLY_TEMPLATE_KEY];
+        if (!tpl) { resolve({ ok: false, code: "no_template" }); return; }
+        var id = "d" + Date.now() + Math.random().toString(36).slice(2, 6);
+        var done = false;
+        replyWaiters[id] = function (res) {
+          if (done) return; done = true; resolve({ ok: !!res.ok, error: res.error });
+        };
+        window.postMessage({ __sc: "ctrl", kind: "submit", id: id, template: tpl,
+          values: { text: text, postId: postKey, parentId: parentCommentKey || "" } }, "*");
+        setTimeout(function () {
+          if (done) return; delete replyWaiters[id]; done = true;
+          resolve({ ok: false, error: "Timed out waiting for Skool." });
+        }, 15000);
+      });
+    });
+  }
+
+  async function scheduleReplyDrain() {
+    if (replyDrainStarted) return;
+    replyDrainStarted = true;
+    // Needs a learned template; otherwise the PWA-composed replies stay
+    // pending and the user finishes them via clipboard + deep link instead.
+    var cap = await new Promise(function (r) {
+      chrome.storage.local.get(REPLY_TEMPLATE_KEY, function (o) { r(!!(o && o[REPLY_TEMPLATE_KEY])); });
+    });
+    if (!cap) return;
+    var res = await sendMessage({ type: "LIST_PENDING_REPLIES", slug: state.slug });
+    var replies = (res && res.replies) || [];
+    for (var i = 0; i < replies.length; i++) {
+      if (!state.active) break; // navigated away
+      var q = replies[i];
+      await sendMessage({ type: "MARK_REPLY", id: q.id, status: "submitting" });
+      var out = await submitViaPage(q.reply_text, q.target_post_key, q.target_comment_key);
+      await sendMessage({
+        type: "MARK_REPLY", id: q.id,
+        status: out.ok ? "submitted" : "failed",
+        error: out.ok ? null : (out.error || "submit failed"),
+      });
+      debug("drained queued reply", q.id, out.ok ? "ok" : ("failed: " + out.error));
+      if (i < replies.length - 1) {
+        await new Promise(function (r) { setTimeout(r, jitter(45000, 90000)); });
+      }
+    }
   }
 
   // On-demand read for the side panel's "Read & suggest": returns the
@@ -548,6 +743,107 @@
       totalOnPage: posts.length,
       posts: posts.slice(0, limit),
     });
+  });
+
+  // On-demand read of the comment thread on the current (post-detail) page,
+  // for the side panel's per-post reply suggestions.
+  chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+    if (!msg || msg.type !== "READ_PAGE_THREAD") return;
+    if (!state.slug) { sendResponse({ ok: false, error: "This tab isn't on a Skool community page." }); return; }
+    if (!state.active) {
+      sendResponse({ ok: false, slug: state.slug, error: !state.allowed
+        ? "This community isn't in your allowlist."
+        : "No admin access detected here — tick the force-enable switch, then reload this tab." });
+      return;
+    }
+    var data = readNextData();
+    var posts = data ? collectNextDataPosts(data) : [];
+    var comments = data ? collectNextDataComments(data) : [];
+    sendResponse({ ok: true, slug: state.slug, posts: posts, comments: comments });
+  });
+
+  /* ---------------------- reply learn / replay --------------------- */
+  // The MAIN-world net-observer learns Skool's real comment-create request
+  // from the owner's own manual reply and posts the redacted template here;
+  // we persist it. It also performs replays on our behalf. See net-observer.js.
+  var REPLY_TEMPLATE_KEY = "sc_reply_template";
+  var replyWaiters = {}; // submit id -> resolver
+
+  window.addEventListener("message", function (ev) {
+    if (ev.source !== window) return;
+    var d = ev.data;
+    if (!d || d.__sc !== "net") return;
+    if (d.kind === "candidate" && d.confidence === "strong" && d.template) {
+      // Only learn on communities we're actually active on (owned + verified).
+      if (state.active) {
+        try {
+          var store = {};
+          store[REPLY_TEMPLATE_KEY] = d.template;
+          chrome.storage.local.set(store);
+          debug("learned reply template from", d.template.url);
+        } catch (e) { /* extension context gone */ }
+      }
+    } else if (d.kind === "submit-result" && replyWaiters[d.id]) {
+      var resolve = replyWaiters[d.id];
+      delete replyWaiters[d.id];
+      resolve(d);
+    }
+  });
+
+  // Whether a reply template has been learned + current page context.
+  chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+    if (!msg || msg.type !== "GET_REPLY_CAPABILITY") return;
+    chrome.storage.local.get(REPLY_TEMPLATE_KEY, function (o) {
+      sendResponse({
+        ok: true,
+        slug: state.slug,
+        active: state.active,
+        hasTemplate: !!(o && o[REPLY_TEMPLATE_KEY]),
+      });
+    });
+    return true;
+  });
+
+  // Submit a reply from the live tab by replaying the learned template via the
+  // page world. Requires an active, allowlisted community and a learned
+  // template; callers fall back to clipboard + deep-link when this returns a
+  // no_template / not_active code.
+  chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+    if (!msg || msg.type !== "SUBMIT_ON_PAGE_REPLY") return;
+    if (!state.active) {
+      sendResponse({ ok: false, code: "not_active",
+        error: "Copilot isn't active on this tab — open your community (admin-verified) first." });
+      return;
+    }
+    if (!msg.postKey || !String(msg.text || "").trim()) {
+      sendResponse({ ok: false, code: "bad_input", error: "Missing reply text or target post." });
+      return;
+    }
+    chrome.storage.local.get(REPLY_TEMPLATE_KEY, function (o) {
+      var tpl = o && o[REPLY_TEMPLATE_KEY];
+      if (!tpl) {
+        sendResponse({ ok: false, code: "no_template",
+          error: "Haven't learned Skool's reply request yet — reply to one comment manually on Skool first, then this can replay it." });
+        return;
+      }
+      var id = "r" + Date.now() + Math.random().toString(36).slice(2, 6);
+      var done = false;
+      replyWaiters[id] = function (res) {
+        if (done) return; done = true;
+        sendResponse({ ok: !!res.ok, status: res.status, error: res.error || null });
+      };
+      window.postMessage({
+        __sc: "ctrl", kind: "submit", id: id, template: tpl,
+        values: { text: msg.text, postId: msg.postKey, parentId: msg.parentCommentKey || "" },
+      }, "*");
+      setTimeout(function () {
+        if (done) return;
+        delete replyWaiters[id];
+        done = true;
+        sendResponse({ ok: false, error: "Timed out waiting for Skool to respond." });
+      }, 15000);
+    });
+    return true; // async
   });
 
   // Normalize CSS-module-style class names (e.g. "PostCard_root__aB3dQ")

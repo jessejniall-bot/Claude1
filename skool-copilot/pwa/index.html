@@ -17,6 +17,7 @@
     <select id="community-picker" class="picker hidden"></select>
     <nav id="tabs" class="tabs hidden">
       <a href="#/dashboard">Dashboard</a>
+      <a href="#/inbox">Inbox</a>
       <a href="#/ideas">Ideas</a>
       <a href="#/drafts">Drafts</a>
       <a href="#/queue">Queue</a>
@@ -156,7 +157,8 @@
         <h3>Draft the next post</h3>
         <p id="gen-overdue" class="muted"></p>
         <label class="field">Optional seed
-          <textarea id="gen-seed" rows="3" placeholder="A member comment, a health flag, or a note — or leave empty"></textarea>
+          <textarea id="gen-seed" rows="3" class="touch" autocapitalize="sentences" autocorrect="off"
+            placeholder="A member comment, a health flag, or a note — or leave empty"></textarea>
         </label>
         <div class="row gen-options">
           <label class="inline-field">Length
@@ -182,7 +184,7 @@
         <p id="gen-error" class="error"></p>
         <div id="gen-result" class="hidden">
           <label class="field">Title <input id="gen-title" type="text" /></label>
-          <label class="field">Body <textarea id="gen-body" rows="12"></textarea></label>
+          <label class="field">Body <textarea id="gen-body" rows="12" class="touch" autocapitalize="sentences" autocorrect="off"></textarea></label>
           <div class="row">
             <button id="gen-bold" class="btn small" type="button" title="Unicode-bold the selected text (or the whole field)">𝗕 Bold selection</button>
             <span id="gen-count" class="meta"></span>
@@ -192,6 +194,40 @@
             <button id="gen-save" class="btn primary" type="button">💾 Save to drafts</button>
           </div>
         </div>
+      </div>
+    </section>
+
+    <!-- Inbox: needs-response + threaded conversations -->
+    <section id="view-inbox" class="view hidden">
+      <div class="card">
+        <h3>Needs a response</h3>
+        <p class="muted">Member questions and comments that have waited past your
+          response window with nothing back from you yet. Draft a reply in your
+          voice, then queue it for the extension to post — or copy it and open
+          Skool. Nothing is ever posted without you.</p>
+        <div class="row" style="align-items:center;gap:10px;flex-wrap:wrap">
+          <label class="inline-field">Waited over
+            <select id="inbox-threshold">
+              <option value="6">6 hours</option>
+              <option value="24" selected>24 hours</option>
+              <option value="48">48 hours</option>
+              <option value="72">3 days</option>
+            </select>
+          </label>
+          <span id="inbox-reply-caps" class="muted"></span>
+        </div>
+        <div id="inbox-list" class="thread-host"></div>
+      </div>
+
+      <div class="card">
+        <h3>Conversations</h3>
+        <p class="muted">Full comment threads from your community — replies nested
+          under what they answer. Open a post to catch up, summarize a long one,
+          or reply to any comment.</p>
+        <div id="inbox-empty" class="muted hidden">No comment threads scraped yet.
+          Open individual posts on Skool with the extension active — the feed page
+          only carries comment counts, so threads fill in from each post's page.</div>
+        <div id="threads-host"></div>
       </div>
     </section>
 

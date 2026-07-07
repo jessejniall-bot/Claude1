@@ -19,10 +19,10 @@ post that fills the gap.
 
 | Piece | What it does |
 |---|---|
-| `extension/` | Manifest V3 Chrome extension: content script scrapes the currently-viewed community feed (gated by ownership verification), background worker syncs to Supabase, side panel shows health + generates drafts without leaving Skool. |
-| `pwa/` | Mobile-friendly dashboard on the same account: health charts, idea inbox, draft editor, queue, settings. |
-| `supabase/schema.sql` | Postgres schema + row-level security + default-pillar seed trigger. Multi-tenant from day one; every row is scoped to your `auth.users` id. |
-| `extension/shared/` | Zero-dependency modules shared by both surfaces: Supabase REST client, encrypted BYOK key vault, multi-provider AI adapter, health engine, pillar classifier. |
+| `extension/` | Manifest V3 Chrome extension: content script scrapes the currently-viewed community (gated by ownership verification) and threads comments, a `world:"MAIN"` observer (`content/net-observer.js`) learns/replays Skool's comment request, the background worker syncs to Supabase, and the side panel shows health, the needs-response inbox, and generates drafts + replies without leaving Skool. |
+| `pwa/` | Mobile-friendly dashboard on the same account: health charts, needs-response inbox with threaded conversations + replies, idea inbox, draft editor, queue, settings. |
+| `supabase/schema.sql` | Postgres schema + row-level security + default-pillar seed trigger. Multi-tenant from day one; every row is scoped to your `auth.users` id. Upgrades in `supabase/upgrade-00*.sql`. |
+| `extension/shared/` | Zero-dependency modules shared by both surfaces: Supabase REST client, encrypted BYOK key vault, multi-provider AI adapter, health engine (+ threading & needs-response), pillar classifier, and reply-request templating (`reply-template.js`). |
 
 AI calls go **directly from your browser to the provider** using your own key.
 Keys are AES-GCM-encrypted with a locally generated device key and stored only
@@ -48,9 +48,11 @@ out to leave the demo.
 
 1. **Backend** — create a free [Supabase](https://supabase.com) project, open
    its SQL editor, and run `supabase/schema.sql` once. Grab the project URL and
-   anon key from *Settings → API*. (If you set up a project before comment
-   scraping was added, run `supabase/upgrade-001-comments.sql` once instead of
-   re-running the full schema.)
+   anon key from *Settings → API*. (Upgrading an existing project rather than
+   starting fresh? Run the upgrade scripts once, in order:
+   `supabase/upgrade-001-comments.sql` then `supabase/upgrade-002-threads.sql`.
+   Solo-mode users: re-run `supabase/solo-mode.sql` afterwards so the new
+   `reply_queue` table gets its open policy too.)
 2. **PWA** — serve this folder statically and open `pwa/`:
    ```bash
    cd skool-copilot
@@ -144,8 +146,32 @@ While on your community, pick how many of the currently-loaded posts to read
 (5/10/20/all) and hit **📖 Read & suggest**. One BYOK call returns a
 recommendation per post — 👍 like it, 💬 quick comment, ✍️ detailed reply, or
 skip — with a reason and a drafted reply in your voice that you can edit and
-copy. Suggestion-only by design: the extension never clicks, likes, or posts
-on your behalf. Gated by the same ownership checks as scraping.
+copy. Suggestion-only by design. Gated by the same ownership checks as scraping.
+
+## Comment threads, the needs-response inbox & replying (v2)
+
+- **Full threads.** The scraper walks a post's whole comment tree (replies
+  nested under what they answer), not just the feed's comment count. Comment
+  content lives on each post's detail page, so threads fill in as you open
+  posts. Both the PWA (**Inbox → Conversations**) and the side panel show them
+  nested, with a one-click **Summarize** to catch up on a long chain.
+- **Needs-response inbox.** The response-latency stat on the dashboard is now a
+  link into an inbox listing the actual member questions/comments sitting past
+  your window with nothing back from you — instead of just a number.
+- **Suggested replies.** One tap drafts a reply to any comment in your voice
+  (same voice profile + one BYOK call as the post generator — no second cost
+  path).
+- **Actually replying.** Skool has no write API, so — rather than hardcode an
+  endpoint that drifts — the extension *learns* Skool's real comment request
+  the first time **you** post a comment manually (a `world:"MAIN"` observer
+  captures the request **shape**, redacted — never the text or ids), then
+  replays it from your live, logged-in tab. No Skool session token is ever
+  stored. A reply drafted in the PWA is queued in `reply_queue` and submitted by
+  the extension next time it sees your tab (spaced out so a batch never reads as
+  automation). If nothing's been learned yet or a submit fails, the reply is
+  copied to your clipboard and the post is opened — paste-and-send, never a dead
+  end. **Every submit is something you trigger; nothing is generated-and-sent on
+  its own.** See `CHANGELOG.md` for the full rationale.
 
 ## Post generator
 
@@ -170,18 +196,22 @@ Behind-the-Scenes (10%)
 
 - `node test/smoke.test.js` — zero-dependency checks of everything pure:
   pillar classifier, health engine (cadence, trend, balance, latency, comment
-  stats, score, improvements, digest), prompt builders, Unicode styling.
+  stats, score, improvements, digest), needs-response inbox, comment threading,
+  reply-request templating (learn/redact/replay), prompt builders, Unicode
+  styling.
 - `node test/e2e.js` — drives the **real PWA** headlessly through
   configure → sign in → add community → dashboard → AI deep review →
-  generate draft, with Supabase and the AI provider mocked at the network
-  layer (no accounts or keys touched). Needs `npm i playwright`; set
+  generate draft → **inbox (suggest reply) → thread expand + summarize**, with
+  Supabase and the AI provider mocked at the network layer (no accounts or keys
+  touched). Needs `npm i playwright`; set
   `PW_CHROMIUM=/path/to/chromium` to reuse an existing browser binary. It
   serves the repo itself on port 8123 and writes screenshots next to the
   script.
 
-## Out of scope for v1
+## Out of scope
 
-- Auto-posting to Skool (no public API — the queue is copy-paste)
+- Auto-posting *new posts* to Skool (the post queue stays copy-paste; only
+  comment replies replay Skool's own request, and only ones you trigger)
 - Billing/payments (BYOK means no usage metering)
 - Platforms other than Skool
 

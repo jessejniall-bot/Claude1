@@ -281,6 +281,34 @@ const AI_DRAFT =
   await page2.click('#tabs a[href="#/drafts"]');
   await page2.waitForSelector(".draft-card");
   console.log("demo mode: saved draft visible in Drafts");
+
+  // v2: inbox — needs-response items render, suggest drafts a canned reply,
+  // threaded conversations render and summarize.
+  await page2.click('#tabs a[href="#/inbox"]');
+  await page2.waitForSelector("#view-inbox:not(.hidden)");
+  await page2.waitForSelector("#inbox-list .inbox-item, #inbox-list .good-note");
+  const inboxItems = await page2.$$eval("#inbox-list .inbox-item", (n) => n.length);
+  if (inboxItems > 0) {
+    await page2.click("#inbox-list .inbox-item button[data-act='suggest']");
+    await page2.waitForFunction(() => {
+      const ta = document.querySelector("#inbox-list .inbox-item .reply-text");
+      return ta && ta.value.trim().length > 0;
+    }, { timeout: 8000 });
+    console.log("demo mode: inbox suggested a reply (" + inboxItems + " waiting)");
+  } else {
+    console.log("demo mode: inbox empty (all answered) — good-note shown");
+  }
+  const threadGroups = await page2.$$eval(".thread-group", (n) => n.length);
+  if (threadGroups > 0) {
+    await page2.click(".thread-group .thread-toggle");
+    await page2.waitForSelector(".thread-group .thread-body:not(.hidden) .tc");
+    await page2.click(".thread-group button[data-act='summarize']");
+    await page2.waitForFunction(() => {
+      const s = document.querySelector(".thread-group .thread-summary");
+      return s && !s.classList.contains("hidden") && s.textContent.length > 20;
+    }, { timeout: 8000 });
+    console.log("demo mode: thread expanded + summarized (" + threadGroups + " threads)");
+  }
   await page2.screenshot({ path: path.join(__dirname, "e2e-demo.png"), fullPage: false });
 
   await ctx2.close();
