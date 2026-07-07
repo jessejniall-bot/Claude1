@@ -41,7 +41,23 @@
 
     var stored = await SC.vault.loadApiKey(provider);
     if (stored) $("opt-ai-status").textContent = "A key is saved for this provider.";
+
+    // Local reply voice
+    var voice = await SC.localVoice.load();
+    $("opt-voice-note").value = voice.styleNote || "";
+    $("opt-voice-samples").value = (voice.samples || []).join("\n\n");
+    if (voice.samples && voice.samples.length) {
+      $("opt-voice-status").textContent = voice.samples.length + " sample reply(ies) saved.";
+    }
   }
+
+  document.getElementById("opt-save-voice").addEventListener("click", async function () {
+    var samples = SC.localVoice.parseSamples($("opt-voice-samples").value);
+    await SC.localVoice.save({ styleNote: $("opt-voice-note").value, samples: samples });
+    $("opt-voice-status").textContent = samples.length
+      ? "Saved " + samples.length + " sample reply(ies). Drafts will match your voice."
+      : "Saved. Add a few sample replies for the best match.";
+  });
 
   $("opt-provider").addEventListener("change", async function (e) {
     fillModels(e.target.value);

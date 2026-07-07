@@ -177,3 +177,12 @@ textarea { resize: vertical; }
 .reply-text { width: 100%; font-size: 15px; line-height: 1.5; min-height: 70px; }
 .inbox-item-status { min-height: 1em; margin: 4px 0 0; }
 textarea:focus, input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* standalone reply drafter */
+#sp-standalone .sugg:first-child { border-top: 1px solid var(--line); margin-top: 8px; }
+.sa-item-status { min-height: 1em; margin: 4px 0 0; }
+.sa-drafts { margin-top: 6px; }
+.sa-draft { border-top: 1px dashed var(--line); padding-top: 8px; margin-top: 8px; }
+.sa-draft:first-child { border-top: none; padding-top: 0; margin-top: 4px; }
+.sa-draft textarea { width: 100%; font-size: 15px; line-height: 1.5; min-height: 66px; }
+#sp-backend-note { padding: 8px 0; }

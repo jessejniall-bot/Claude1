@@ -504,28 +504,25 @@
     return found;
   }
 
-  // DOM fallback: coarse, only used when __NEXT_DATA__ yields nothing
-  // (e.g. after client-side navigation). Looks for feed cards that show
-  // both a like and a comment count.
+  // DOM fallback: used when __NEXT_DATA__ yields nothing (e.g. after
+  // client-side navigation, or posts loaded by infinite scroll that the SSR
+  // snapshot never had). Anchored on permalinks via SC.extract — never on
+  // class names (they're hashed) — and keyed on the STABLE slug, never postId.
   function collectDomPosts() {
-    var posts = [];
-    var nodes = document.querySelectorAll('div[class*="PostItem"], article');
-    nodes.forEach(function (node) {
-      var text = (node.innerText || "").trim();
-      if (text.length < 40) return;
-      var counts = text.match(/(\d+)\s*(?:likes?|👍)?[\s\S]*?(\d+)\s*comments?/i);
-      var body = text.split(/\n{2,}/).slice(0, 4).join("\n\n").slice(0, 2000);
-      posts.push({
-        post_key: hashText(body),
-        post_text: body,
-        likes: counts ? Number(counts[1]) : 0,
-        comments: counts ? Number(counts[2]) : 0,
+    if (!SC.extract || !SC.extract.extractFeedPosts) return [];
+    return SC.extract.extractFeedPosts().map(function (p) {
+      var text = (p.title ? p.title + "\n\n" : "") + (p.body || "");
+      return {
+        post_key: p.slug, // stable across sessions; postId rotates
+        post_name: p.slug,
+        post_text: text.trim().slice(0, 8000),
+        likes: 0,
+        comments: 0,
         posted_at: null,
-        author: null,
+        author: p.author,
         first_comment_at: null,
-      });
+      };
     });
-    return posts;
   }
 
   /* ----------------------------- sync ------------------------------ */
@@ -844,6 +841,41 @@
       }, 15000);
     });
     return true; // async
+  });
+
+  /* ------------------ standalone reply-draft source ---------------- */
+  // Backend-free: the side panel's "Draft replies" card asks what's on the
+  // current Skool page (via the class-free SC.extract), so it works with no
+  // Supabase account. Gated by the live admin signal OR the per-community
+  // override (read straight from storage, since there may be no backend to
+  // tell us the allowlist). Reads only — never posts.
+  chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+    if (!msg || msg.type !== "READ_PAGE_DRAFTS_SOURCE") return;
+    if (!state.slug) {
+      sendResponse({ ok: false, error: "This tab isn't on a Skool community page." });
+      return;
+    }
+    if (!SC.extract) { sendResponse({ ok: false, error: "Reload your Skool tab and try again." }); return; }
+    chrome.storage.local.get("sc_admin_override", function (o) {
+      var overrides = (o && o["sc_admin_override"]) || {};
+      var overridden = !!overrides[state.slug];
+      if (!state.admin && !overridden) {
+        sendResponse({ ok: false, code: "not_admin", slug: state.slug,
+          error: "This doesn't look like a community you admin. If it's yours, tick " +
+            "\"force-enable\" and reload." });
+        return;
+      }
+      var detail = SC.extract.currentDetailPost();
+      if (detail) {
+        var comments = SC.extract.extractComments(12);
+        sendResponse({ ok: true, mode: "detail", slug: state.slug, group: detail.group,
+          post: detail, comments: comments });
+      } else {
+        var posts = SC.extract.extractFeedPosts();
+        sendResponse({ ok: true, mode: "feed", slug: state.slug, posts: posts });
+      }
+    });
+    return true; // async (storage read)
   });
 
   // Normalize CSS-module-style class names (e.g. "PostCard_root__aB3dQ")

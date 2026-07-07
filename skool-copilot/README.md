@@ -173,6 +173,18 @@ copy. Suggestion-only by design. Gated by the same ownership checks as scraping.
   end. **Every submit is something you trigger; nothing is generated-and-sent on
   its own.** See `CHANGELOG.md` for the full rationale.
 
+## Draft replies with no account (standalone)
+
+The side panel's **Draft replies** card works with **no Supabase backend and no
+web app** — just an AI key (set in the extension's Options) and, ideally, a few
+of your own sample replies pasted in Options so drafts sound like you. Hit
+**📥 Read this page** on your community and it lists the posts found (or, on a
+post's page, that post + its comments); **✍️ Draft 3 replies** gives three
+options per post to copy. It reads Skool's DOM through the permalink anchor
+(`content/extract.js`) — never hashed class names, always keyed on the stable
+`slug`, never the rotating `postId` — so Skool restyling only ever affects that
+one file. Suggestion-only: nothing is posted.
+
 ## Post generator
 
 Drafts are grounded in the scraped stats: every generation prompt includes the

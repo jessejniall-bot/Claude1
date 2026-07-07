@@ -15,6 +15,7 @@ require("../extension/shared/health-engine.js");
 require("../extension/shared/ai-providers.js");
 require("../extension/shared/unicode-style.js");
 require("../extension/shared/reply-template.js");
+require("../extension/shared/voice-local.js");
 
 const SC = globalThis.SC;
 const DAY = 86400000;
@@ -262,6 +263,38 @@ console.log("reply + summary prompts");
   });
   check("summary prompt: includes comments", sp.includes("q1") && sp.includes("a1"));
   check("summary prompt: indents replies", sp.includes("  - You"));
+}
+
+/* ------------- v2.1: standalone reply drafts (local voice) ------- */
+console.log("standalone reply drafts");
+{
+  // sample parsing: blank-line separated blocks stay whole
+  const blocks = SC.localVoice.parseSamples("Reply one line A\nline B\n\nReply two");
+  check("parseSamples: blank-line blocks", blocks.length === 2 && blocks[0].includes("line B"), blocks);
+  const singles = SC.localVoice.parseSamples("r1\nr2\nr3");
+  check("parseSamples: single lines when no blanks", singles.length === 3);
+  check("parseSamples: empty is []", SC.localVoice.parseSamples("   ").length === 0);
+
+  const lp = SC.buildLocalReplyPrompt({
+    post: { author: "Ben", title: "How I onboard", body: "steps here" },
+    comments: [{ authorName: "Cara", body: "love this" }],
+    voice: { styleNote: "warm, short", samples: ["Congrats! How long did that take?", "Love it — try X next."] },
+    count: 3,
+  });
+  check("local reply prompt: includes samples", lp.includes("Congrats! How long"));
+  check("local reply prompt: includes style note", lp.includes("warm, short"));
+  check("local reply prompt: includes post", lp.includes("How I onboard"));
+  check("local reply prompt: includes comment context", lp.includes("Cara"));
+  check("local reply prompt: asks for N JSON", lp.includes("exactly 3") && lp.includes("JSON array"));
+
+  check("parseReplyDrafts: JSON array", JSON.stringify(
+    SC.parseReplyDrafts('["a","b","c","d"]', 3)) === JSON.stringify(["a", "b", "c"]));
+  check("parseReplyDrafts: fenced JSON", SC.parseReplyDrafts('```json\n["x","y"]\n```', 3).length === 2);
+  check("parseReplyDrafts: numbered fallback",
+    SC.parseReplyDrafts("1. first\n2. second\n3. third", 3).length === 3);
+  check("parseReplyDrafts: bulleted fallback",
+    SC.parseReplyDrafts("- one\n- two", 5)[0] === "one");
+  check("parseReplyDrafts: empty", SC.parseReplyDrafts("", 3).length === 0);
 }
 
 /* ------------------------------ done ----------------------------- */
