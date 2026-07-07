@@ -5,6 +5,49 @@ judgment calls made where the spec left something open. This file exists so a
 future reader (human or AI) can see *why* a decision was made without having to
 reverse-engineer it from the diff.
 
+## v2.1 — Standalone reply drafter (works with no account)
+
+The extension no longer needs the web app or a Supabase backend to be useful.
+A new **Draft replies** card in the side panel reads the posts on your current
+Skool tab and drafts replies in your voice — account optional.
+
+**What shipped**
+
+- **Class-free DOM scraper** (`content/extract.js`). Anchors on the permalink
+  `<a href="/{group}/{slug}?p={id}">` and walks up to the post card, instead of
+  matching Skool's hashed style-component class names. Two rules are kept on
+  purpose and must not be "simplified" away: never select by class (hashed),
+  and never key anything on `postId` across sessions (it rotates — the stable
+  key is `slug`). This also replaces the old class-based DOM fallback in the
+  passive scraper, and (unlike the `__NEXT_DATA__` snapshot) it sees posts
+  loaded by infinite scroll.
+- **Local voice profile** (`shared/voice-local.js`, Options page). Paste 5–10
+  of your own real replies + an optional style note; stored in
+  `chrome.storage.local` (`sc_local_voice`). Those few-shot samples are what
+  make drafts sound like you — same idea as the backend voice profile, but no
+  account required.
+- **Standalone drafter** (side panel). "Read this page" lists the posts found
+  (or, on a post's detail page, that post + its comments), and "Draft 3
+  replies" produces three options per post via one BYOK call, parsed from JSON.
+  Copy the one you like — suggestion-only, nothing is posted.
+- The side panel no longer blocks on a backend: the drafter is always visible;
+  the account-only cards (health, needs-response inbox, generator, etc.) appear
+  only when a backend is configured and signed in, with a one-line
+  "connect an account (optional)" note otherwise.
+
+**Decisions**
+
+- **Reused the existing BYOK + admin-gate machinery, added nothing backend.**
+  The drafter is gated by the same live admin signal (or the per-community
+  force-enable override, read straight from `chrome.storage`) as scraping, so
+  it still only ever acts on communities you appear to own — but it needs no
+  allowlist, because there's no backend to hold one.
+- **Kept the extension unaware of the app, as requested.** Nothing in this
+  feature calls Supabase; the API key comes from the local vault (Options),
+  the voice from local storage, the content from the live tab.
+- **`parsePermalink` is string-based, not `new URL(...)`**, so it never depends
+  on the page origin (robust on skool.com and in tests alike).
+
 ## v2 — Threads, replies, and the needs-response inbox
 
 This pass extends a working product; it does not rebuild it. Every v1 feature

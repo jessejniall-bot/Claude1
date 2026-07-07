@@ -19,30 +19,57 @@
   /* ----------------------------- boot ------------------------------ */
 
   async function boot() {
+    // The standalone reply drafter needs no account, so the panel is never
+    // blocked on a backend: show the shell + drafter first, then layer the
+    // account features on top only if a backend is configured + signed in.
+    $("sp-auth").classList.add("hidden");
+    $("sp-main").classList.remove("hidden");
+    initStandalone();
     try {
       client = await SC.getClient();
-      if (!client) {
-        showAuth("Backend not configured yet. Easiest path: open the Copilot web app " +
-          "with this extension installed — settings sync over automatically. " +
-          "Or open Settings here and paste your Supabase URL + anon key.");
-        return;
+      var solo = client ? await SC.isSolo() : false;
+      var user = client && !solo ? await client.getUser() : null;
+      if (client && (solo || user)) {
+        backendMode(true);
+        await showMain();
+      } else {
+        backendMode(false);
+        $("sp-backend-note").innerHTML = client
+          ? "Signed out. The reply drafter below works as-is; " +
+            "<button id=\"sp-connect\" class=\"link\" type=\"button\">sign in</button> " +
+            "to also track community health."
+          : "No account connected — the reply drafter below works as-is. " +
+            "<button id=\"sp-connect\" class=\"link\" type=\"button\">Connect an account</button> " +
+            "(optional) to track community health, or set your AI key in " +
+            "<button id=\"sp-open-settings\" class=\"link\" type=\"button\">Settings</button>.";
+        wireBackendNote();
       }
-      if (await SC.isSolo()) {
-        await showMain(); // solo mode: no accounts anywhere
-        return;
-      }
-      var user = await client.getUser();
-      if (!user) {
+    } catch (e) {
+      backendMode(false);
+      $("sp-backend-note").textContent =
+        "Account features are off (" + String((e && e.message) || e) +
+        "). The reply drafter below still works.";
+    }
+  }
+
+  // Toggle the account-only cards; the standalone drafter is always visible.
+  function backendMode(on) {
+    document.querySelectorAll(".needs-backend").forEach(function (el) {
+      el.classList.toggle("hidden", !on);
+    });
+    $("sp-backend-note").classList.toggle("hidden", on);
+  }
+
+  function wireBackendNote() {
+    var connect = $("sp-connect");
+    if (connect) {
+      connect.addEventListener("click", function () {
         showAuth("Sign in with the same account you use in the Copilot web app. " +
           "(Or enable solo mode in the web app — it removes sign-in here too.)");
-        return;
-      }
-      await showMain();
-    } catch (e) {
-      // Never leave the panel blank — say what broke.
-      showAuth("Something went wrong: " + String((e && e.message) || e) +
-        " — check the backend settings, then reopen this panel.");
+      });
     }
+    var settings = $("sp-open-settings");
+    if (settings) settings.addEventListener("click", function () { chrome.runtime.openOptionsPage(); });
   }
 
   function showAuth(note) {
@@ -54,6 +81,7 @@
   async function showMain() {
     $("sp-auth").classList.add("hidden");
     $("sp-main").classList.remove("hidden");
+    backendMode(true); // entering the full experience — reveal account cards
     communities = await client
       .from("communities")
       .select("id,name,skool_url,slug")
@@ -598,6 +626,174 @@
       btn.disabled = false;
       btn.textContent = "🔬 Capture page report";
     }
+  }
+
+  /* ------------------ standalone reply drafter --------------------- */
+  // Works with NO backend: reads the current Skool tab via the content
+  // script's class-free extractor and drafts replies from the LOCAL voice
+  // profile. Suggestion-only — copy what you like; nothing is posted.
+
+  var saSlug = null;      // slug of the last page read (for the override toggle)
+  var saInited = false;
+
+  async function initStandalone() {
+    if (saInited) return;
+    saInited = true;
+    $("sp-sa-read").addEventListener("click", standaloneRead);
+    $("sp-sa-posts").addEventListener("click", onStandaloneClick);
+    $("sp-sa-override").addEventListener("change", async function (e) {
+      if (!saSlug) return;
+      var overrides = (await SC.storage.get("sc_admin_override")) || {};
+      if (e.target.checked) overrides[saSlug] = true; else delete overrides[saSlug];
+      await SC.storage.set("sc_admin_override", overrides);
+      $("sp-sa-status").textContent = "Saved — reload your Skool tab, then Read again.";
+    });
+    refreshVoiceNote();
+  }
+
+  async function refreshVoiceNote() {
+    var v = await SC.localVoice.load();
+    var note = $("sp-sa-voice-note");
+    if (v.samples && v.samples.length) {
+      note.innerHTML = "Voice: " + v.samples.length + " sample reply(ies) saved. " +
+        "<button id=\"sp-sa-voice-link\" class=\"link\" type=\"button\">Edit</button>";
+    } else {
+      note.innerHTML = "No voice set — drafts are generic until you " +
+        "<button id=\"sp-sa-voice-link\" class=\"link\" type=\"button\">add sample replies</button>.";
+    }
+    var link = $("sp-sa-voice-link");
+    if (link) link.addEventListener("click", function () { chrome.runtime.openOptionsPage(); });
+  }
+
+  function queryActiveSkoolTab() {
+    return new Promise(function (resolve, reject) {
+      chrome.tabs.query({ active: true, lastFocusedWindow: true }, function (tabs) {
+        var tab = tabs && tabs[0];
+        if (!tab || !tab.url || tab.url.indexOf("skool.com") === -1) {
+          reject(new Error("Switch to your Skool community tab first, then try again."));
+        } else resolve(tab);
+      });
+    });
+  }
+
+  async function standaloneRead() {
+    $("sp-sa-error").textContent = "";
+    $("sp-sa-status").textContent = "";
+    $("sp-sa-posts").innerHTML = "";
+    var btn = $("sp-sa-read");
+    btn.disabled = true; btn.textContent = "Reading…";
+    try {
+      var tab = await queryActiveSkoolTab();
+      var res = await new Promise(function (resolve, reject) {
+        chrome.tabs.sendMessage(tab.id, { type: "READ_PAGE_DRAFTS_SOURCE" }, function (r) {
+          if (chrome.runtime.lastError) reject(new Error("Couldn't reach the page — reload your Skool tab once, then retry."));
+          else resolve(r);
+        });
+      });
+      if (res && res.slug) { saSlug = res.slug; }
+      if (!res || !res.ok) {
+        if (res && res.code === "not_admin") {
+          $("sp-sa-override-row").classList.remove("hidden");
+          var ov = (await SC.storage.get("sc_admin_override")) || {};
+          $("sp-sa-override").checked = !!(saSlug && ov[saSlug]);
+        }
+        throw new Error((res && res.error) || "Couldn't read the page.");
+      }
+      $("sp-sa-override-row").classList.add("hidden");
+      renderStandaloneSource(res);
+    } catch (e) {
+      $("sp-sa-error").textContent = String((e && e.message) || e);
+    } finally {
+      btn.disabled = false; btn.textContent = "📥 Read this page";
+    }
+  }
+
+  function renderStandaloneSource(res) {
+    var host = $("sp-sa-posts");
+    host.innerHTML = "";
+    var items = res.mode === "detail" ? [res.post] : (res.posts || []);
+    items = items.filter(function (p) { return p && (p.title || p.body); });
+    if (!items.length) {
+      $("sp-sa-status").textContent = res.mode === "detail"
+        ? "Couldn't read this post's text — scroll it into view and retry."
+        : "No posts found on this page — scroll the feed a little and retry.";
+      return;
+    }
+    $("sp-sa-status").textContent = res.mode === "detail"
+      ? "On a post" + (res.comments && res.comments.length ? " with " + res.comments.length + " comment(s)" : "") +
+        " — draft replies below."
+      : "Found " + items.length + " post(s). Draft replies to any of them.";
+    items.forEach(function (post) {
+      var div = document.createElement("div");
+      div.className = "sugg";
+      div._post = post;
+      div._comments = res.mode === "detail" ? (res.comments || []) : [];
+      var snippet = ((post.title ? post.title + " — " : "") + (post.body || "")).slice(0, 120);
+      div.innerHTML =
+        '<div class="head"><span class="who">' + escapeHtml(post.author || "Post") + "</span></div>" +
+        '<div class="snippet">' + escapeHtml(snippet) + "…</div>" +
+        '<div class="row"><button class="btn small primary" data-act="draft">✍️ Draft 3 replies</button></div>' +
+        '<p class="muted sa-item-status"></p><div class="sa-drafts"></div>';
+      host.appendChild(div);
+    });
+  }
+
+  async function onStandaloneClick(e) {
+    var btn = e.target.closest("button[data-act]");
+    if (!btn) return;
+    var card = btn.closest(".sugg");
+    if (!card) return;
+    var act = btn.dataset.act;
+    var st = card.querySelector(".sa-item-status");
+    if (act === "draft") {
+      btn.disabled = true; var old = btn.textContent; btn.textContent = "Drafting…";
+      if (st) st.textContent = "";
+      try {
+        var drafts = await standaloneDraft(card._post, card._comments);
+        renderStandaloneDrafts(card.querySelector(".sa-drafts"), drafts);
+      } catch (err) {
+        if (st) st.textContent = "❌ " + err.message;
+      } finally { btn.disabled = false; btn.textContent = old; }
+    } else if (act === "copy") {
+      var ta = card.querySelector('textarea[data-draft="' + btn.dataset.i + '"]');
+      if (ta) navigator.clipboard.writeText(ta.value).then(function () { flash(btn, "✅"); });
+    }
+  }
+
+  async function standaloneDraft(post, comments) {
+    var settings = (await SC.storage.get("sc_ai_settings")) || {};
+    if (!settings.provider) throw new Error("No AI provider set. Open Settings and add your key.");
+    var apiKey = await SC.vault.loadApiKey(settings.provider);
+    if (!apiKey) throw new Error("No API key stored for " + settings.provider + ". Open Settings.");
+    var voice = await SC.localVoice.load();
+    var text = await SC.generateDraft({
+      provider: settings.provider, apiKey: apiKey, model: settings.model,
+      system: SC.LOCAL_REPLY_SYSTEM_PROMPT, maxTokens: 900,
+      prompt: SC.buildLocalReplyPrompt({ post: post, comments: comments, voice: voice, count: 3 }),
+    });
+    var drafts = SC.parseReplyDrafts(text, 3);
+    if (!drafts.length) throw new Error("Couldn't parse a reply from the model — try again.");
+    return drafts;
+  }
+
+  function renderStandaloneDrafts(host, drafts) {
+    host.innerHTML = "";
+    drafts.forEach(function (d, i) {
+      var wrap = document.createElement("div");
+      wrap.className = "sa-draft";
+      var ta = document.createElement("textarea");
+      ta.rows = 3; ta.value = d; ta.setAttribute("data-draft", String(i));
+      ta.setAttribute("autocapitalize", "sentences"); ta.setAttribute("autocorrect", "off");
+      wrap.appendChild(ta);
+      var row = document.createElement("div");
+      row.className = "row";
+      var copy = document.createElement("button");
+      copy.className = "btn small"; copy.type = "button";
+      copy.textContent = "📋 Copy"; copy.dataset.act = "copy"; copy.dataset.i = String(i);
+      row.appendChild(copy);
+      wrap.appendChild(row);
+      host.appendChild(wrap);
+    });
   }
 
   /* ----------------------------- auth ------------------------------ */

@@ -395,6 +395,77 @@
   // Collapse a long comment chain into a few lines so the owner can catch up
   // without reading top to bottom. One AI call.
 
+  /* -------------- standalone reply drafts (few-shot voice) --------- */
+  // Backend-free: draft N reply options to a post/comment, learning the
+  // owner's voice from their own pasted sample replies (few-shot). Returns
+  // a JSON array of strings.
+
+  SC.LOCAL_REPLY_SYSTEM_PROMPT =
+    "You are drafting reply options for a Skool community owner, in THEIR voice. " +
+    "You are shown a few of their real past replies as the gold standard for tone, " +
+    "length, and phrasing — match them closely. Replies must be specific to the " +
+    "post, warm, human, and short. Never generic praise, never mention AI, no " +
+    "hashtags, no sign-off signature. Respond with raw JSON only — an array of " +
+    "strings, no prose, no code fences.";
+
+  // buildLocalReplyPrompt({post:{author,title,body}, comments:[{authorName,body}],
+  //                        voice:{styleNote,samples}, count})
+  SC.buildLocalReplyPrompt = function (ctx) {
+    var voice = ctx.voice || {};
+    var post = ctx.post || {};
+    var count = ctx.count || 3;
+    var lines = [];
+    if (voice.styleNote) { lines.push("The owner describes their voice as: " + voice.styleNote); lines.push(""); }
+    if (voice.samples && voice.samples.length) {
+      lines.push("Here are real replies the owner has written — copy this voice:");
+      voice.samples.slice(0, 10).forEach(function (s, i) {
+        lines.push((i + 1) + ". " + String(s).replace(/\s+/g, " ").trim());
+      });
+      lines.push("");
+    } else {
+      lines.push("(No sample replies provided — keep it warm, brief, and specific.)");
+      lines.push("");
+    }
+    lines.push("Draft replies to this post" + (post.author ? " by " + post.author : "") + ":");
+    if (post.title) lines.push("Title: " + post.title);
+    if (post.body) lines.push(String(post.body).replace(/\s+/g, " ").slice(0, 900));
+    if (!post.title && !post.body) lines.push("(post text unavailable — reply to the discussion generally)");
+    if (ctx.comments && ctx.comments.length) {
+      lines.push("");
+      lines.push("Recent comments on it (for context):");
+      ctx.comments.slice(0, 8).forEach(function (c) {
+        lines.push("- " + (c.authorName || "member") + ": " +
+          String(c.body || "").replace(/\s+/g, " ").slice(0, 200));
+      });
+    }
+    lines.push("");
+    lines.push("Return exactly " + count + " distinct reply options as a JSON array of " +
+      "strings, e.g. [\"first reply\", \"second reply\"]. Vary the angle across them " +
+      "(one warm/short, one that asks a follow-up question, one more substantive).");
+    return lines.join("\n");
+  };
+
+  // Tolerant parser: JSON array of strings, else a numbered/bulleted list.
+  SC.parseReplyDrafts = function (text, count) {
+    if (!text) return [];
+    var s = String(text).replace(/```(?:json)?/gi, "").trim();
+    var start = s.indexOf("["), end = s.lastIndexOf("]");
+    if (start !== -1 && end > start) {
+      try {
+        var arr = JSON.parse(s.slice(start, end + 1));
+        if (Array.isArray(arr)) {
+          var out = arr.map(function (x) { return String(x).trim(); }).filter(Boolean);
+          if (out.length) return count ? out.slice(0, count) : out;
+        }
+      } catch (e) { /* fall through to list parse */ }
+    }
+    // Fallback: split a numbered/bulleted list.
+    var items = s.split(/\n/).map(function (l) {
+      return l.replace(/^\s*(?:\d+[.)]|[-*•])\s*/, "").trim();
+    }).filter(function (l) { return l.length > 1; });
+    return count ? items.slice(0, count) : items;
+  };
+
   SC.THREAD_SUMMARY_SYSTEM_PROMPT =
     "You summarize a Skool comment thread for the community owner so they can " +
     "catch up fast. Be concise and concrete. Surface any direct questions to the " +

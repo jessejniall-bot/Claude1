@@ -56,10 +56,31 @@
     <p id="opt-ai-status" class="muted"></p>
   </section>
 
+  <section class="card">
+    <h2>Your reply voice</h2>
+    <p class="muted">
+      Powers the side panel's <strong>Draft replies</strong> — no account needed.
+      Paste 5–10 of your own real replies (one per line, or leave a blank line
+      between longer ones). These few-shot examples are what make drafts sound
+      like you.
+    </p>
+    <label class="field">Style note (optional)
+      <input id="opt-voice-note" type="text"
+        placeholder="e.g. Warm, direct, short. First name. One question at the end." />
+    </label>
+    <label class="field">Your sample replies
+      <textarea id="opt-voice-samples" rows="8" autocapitalize="sentences" autocorrect="off"
+        placeholder="Love this — what worked best for you?&#10;&#10;Congrats! How long did that take you to pull together?"></textarea>
+    </label>
+    <button id="opt-save-voice" class="btn primary" type="button">Save voice</button>
+    <p id="opt-voice-status" class="muted"></p>
+  </section>
+
   <script src="../shared/config.js"></script>
   <script src="../shared/supabase-lite.js"></script>
   <script src="../shared/key-vault.js"></script>
   <script src="../shared/ai-providers.js"></script>
+  <script src="../shared/voice-local.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

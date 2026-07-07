@@ -26,18 +26,41 @@
 
   <!-- Main -->
   <main id="sp-main" class="hidden">
-    <label class="field">
+
+    <!-- Standalone reply drafter — works with NO account/backend -->
+    <section class="card" id="sp-standalone">
+      <h2>Draft replies to a post</h2>
+      <p class="muted">Reads the posts on your current Skool tab and drafts replies
+        in your voice — no account needed. Copy the one you like; nothing is posted
+        for you.</p>
+      <label class="check-row hidden" id="sp-sa-override-row"
+             title="Only tick this if you really admin this community.">
+        <input id="sp-sa-override" type="checkbox" />
+        <span>Force-enable here (Skool page shows no admin markers)</span>
+      </label>
+      <div class="row">
+        <button id="sp-sa-read" class="btn primary" type="button">📥 Read this page</button>
+      </div>
+      <p id="sp-sa-status" class="muted"></p>
+      <p id="sp-sa-error" class="error"></p>
+      <div id="sp-sa-posts"></div>
+      <p class="muted" id="sp-sa-voice-note"></p>
+    </section>
+
+    <p id="sp-backend-note" class="muted hidden"></p>
+
+    <label class="field needs-backend">
       Community
       <select id="sp-community"></select>
     </label>
-    <label class="check-row hidden" id="sp-override-row"
+    <label class="check-row hidden needs-backend" id="sp-override-row"
            title="Only if you really admin this community. The allowlist still applies.">
       <input id="sp-override" type="checkbox" />
       <span>Force-enable scraping here (Skool page shows no admin markers)</span>
     </label>
 
     <!-- Shown when the account has no communities yet -->
-    <section id="sp-add" class="card hidden">
+    <section id="sp-add" class="card hidden needs-backend">
       <h2>Add your community</h2>
       <p class="muted">Copilot only works with communities you own or admin —
         it re-verifies admin access on every pageview before scraping.</p>
@@ -55,14 +78,14 @@
       <p id="sp-add-error" class="error"></p>
     </section>
 
-    <section class="card" id="sp-health">
+    <section class="card needs-backend" id="sp-health">
       <h2>Health</h2>
       <div id="sp-score" class="score-line"></div>
       <div id="sp-stats" class="stats"></div>
       <ul id="sp-flags" class="flags"></ul>
     </section>
 
-    <section class="card" id="sp-inbox-card">
+    <section class="card needs-backend" id="sp-inbox-card">
       <h2>Needs a response</h2>
       <p class="muted">Member comments waiting past 24h with no reply from you.
         Draft in your voice, then post straight to Skool from your open tab — or
@@ -71,7 +94,7 @@
       <div id="sp-inbox"></div>
     </section>
 
-    <section class="card">
+    <section class="card needs-backend">
       <h2>Engage with this page</h2>
       <p class="muted">Reads the posts currently loaded in your Skool tab and suggests
         how to engage with each — like, quick comment, or a drafted reply you can
@@ -92,7 +115,7 @@
       <div id="sp-suggestions"></div>
     </section>
 
-    <section class="card">
+    <section class="card needs-backend">
       <h2>Draft the next post</h2>
       <p id="sp-overdue" class="muted"></p>
       <label class="field">
@@ -139,6 +162,7 @@
   <script src="../shared/ai-providers.js"></script>
   <script src="../shared/health-engine.js"></script>
   <script src="../shared/unicode-style.js"></script>
+  <script src="../shared/voice-local.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>
