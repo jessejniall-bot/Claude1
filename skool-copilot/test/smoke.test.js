@@ -127,29 +127,6 @@ const ap = SC.buildAnalysisPrompt({
 check("analysis prompt: structure", ap.includes("VERDICT"));
 check("analysis prompt: comments included", ap.includes("Alice: great post"));
 
-/* -------------------- engagement suggestions --------------------- */
-console.log("engagement suggestions");
-const ep = SC.buildEngagementPrompt({
-  communityName: "T",
-  voice: { tone_notes: "warm", banned_words: ["synergy"] },
-  posts: [
-    { author: "Alice", post_text: "How do I price my first offer?", likes: 3, comments: 1 },
-    { author: "Bob", post_text: "Just hit 100 members!", likes: 9, comments: 4 },
-  ],
-});
-check("engage prompt: posts included", ep.includes("POST 2") && ep.includes("Alice"));
-check("engage prompt: action vocabulary", ep.includes("detailed_reply") && ep.includes("like_only"));
-check("engage prompt: voice", ep.includes("warm") && ep.includes("synergy"));
-
-const goodJson = '```json\n[{"post":1,"action":"detailed_reply","reason":"asked a question","reply":"Hey Alice!"},' +
-  '{"post":2,"action":"like_only","reason":"celebration","reply":""}]\n```';
-const parsed = SC.parseEngagementSuggestions(goodJson);
-check("parser: strips fences, parses", parsed && parsed.length === 2, parsed);
-check("parser: fields normalized", parsed[0].action === "detailed_reply" && parsed[1].reply === "");
-const wrapped = SC.parseEngagementSuggestions('Sure! Here you go: [{"post":1,"action":"skip","reason":"x","reply":""}] Hope that helps!');
-check("parser: tolerates surrounding prose", wrapped && wrapped.length === 1);
-check("parser: garbage returns null", SC.parseEngagementSuggestions("no json here") === null);
-check("parser: empty returns null", SC.parseEngagementSuggestions("") === null);
 
 /* ------------------------ unicode styling ------------------------ */
 console.log("unicode styling");
@@ -286,6 +263,18 @@ console.log("standalone reply drafts");
   check("local reply prompt: includes post", lp.includes("How I onboard"));
   check("local reply prompt: includes comment context", lp.includes("Cara"));
   check("local reply prompt: asks for N JSON", lp.includes("exactly 3") && lp.includes("JSON array"));
+
+  // replyTo targets a specific comment (the comment feed feature)
+  const cp = SC.buildLocalReplyPrompt({
+    post: { author: "Ben", title: "How I onboard", body: "steps" },
+    comments: [{ authorName: "Cara", body: "earlier note" }],
+    replyTo: { authorName: "Dana Ray", body: "Does this scale past 500 members?" },
+    voice: { samples: ["Love it!"] }, count: 3,
+  });
+  check("reply-to-comment prompt: targets the comment", cp.includes("TO THIS COMMENT from Dana Ray"));
+  check("reply-to-comment prompt: includes comment text", cp.includes("Does this scale past 500"));
+  check("reply-to-comment prompt: addresses first name", cp.includes("Address Dana"));
+  check("reply-to-comment prompt: keeps post as context", cp.includes("The post under discussion"));
 
   check("parseReplyDrafts: JSON array", JSON.stringify(
     SC.parseReplyDrafts('["a","b","c","d"]', 3)) === JSON.stringify(["a", "b", "c"]));

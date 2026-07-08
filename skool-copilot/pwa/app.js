@@ -237,7 +237,6 @@
   // Needs-response list + threaded conversations, with per-comment AI reply
   // drafting, queue-to-Skool, copy-and-open, and thread summarization.
 
-  var AI_SETTINGS_KEY_INBOX = "sc_ai_settings";
 
   function communityBaseUrl() {
     var c = currentCommunity();
@@ -384,7 +383,7 @@
   // Draft a reply to one comment/post using the shared voice profile.
   async function draftReply(item, thread) {
     var demo = await SC.isDemo();
-    var settings = (await SC.storage.get(AI_SETTINGS_KEY_INBOX)) || {};
+    var settings = (await SC.storage.get(AI_SETTINGS_KEY)) || {};
     var apiKey = settings.provider ? await SC.vault.loadApiKey(settings.provider) : null;
     if (!apiKey) {
       if (demo) return SC.demoReply(item.author, item.text);
@@ -510,7 +509,7 @@
 
   async function summarizeThread(g) {
     var demo = await SC.isDemo();
-    var settings = (await SC.storage.get(AI_SETTINGS_KEY_INBOX)) || {};
+    var settings = (await SC.storage.get(AI_SETTINGS_KEY)) || {};
     var apiKey = settings.provider ? await SC.vault.loadApiKey(settings.provider) : null;
     var flat = flattenThread(g);
     if (!flat.length) return "This thread has no comments yet.";

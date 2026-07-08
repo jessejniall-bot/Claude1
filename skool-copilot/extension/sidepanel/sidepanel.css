@@ -186,3 +186,12 @@ textarea:focus, input:focus, select:focus { outline: 2px solid var(--accent); ou
 .sa-draft:first-child { border-top: none; padding-top: 0; margin-top: 4px; }
 .sa-draft textarea { width: 100%; font-size: 15px; line-height: 1.5; min-height: 66px; }
 #sp-backend-note { padding: 8px 0; }
+
+/* comment feed in the engage card */
+.sa-comments-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 12px; padding-top: 10px; border-top: 2px solid var(--line);
+}
+.sa-comments-head .who { font-weight: 700; }
+.sa-comment { border-left: 2px solid var(--line); padding-left: 10px; }
+.sa-comment-body { white-space: pre-wrap; }
