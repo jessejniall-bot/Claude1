@@ -117,9 +117,9 @@ copy) — it never clicks or posts for you.
   select the community, and tick **"Force-enable scraping here"**, then
   reload the Skool tab — the pill turns green ("manual admin override").
   The allowlist + ownership pledge still apply. To help fix detection
-  properly, run `SC_COPILOT_DIAGNOSE()` in the Skool page's console
-  (F12 → Console) and share the output — it reports page structure
-  (role fields and admin-ish links), not post contents.
+  properly, use **Troubleshooting → 🔬 Capture page report** and share the
+  output — it reports page structure (role fields and admin-ish links), not
+  post contents.
 - **Pill stuck at 0 synced on a community you admin** — hover the pill: it
   shows which admin signal matched and the sync counters. Run
   `window.SC_COPILOT_DEBUG = true` in the page console for per-pass logs.

@@ -456,144 +456,6 @@
     setTimeout(function () { btn.textContent = original; }, 1400);
   }
 
-  /* ---------------------- read page & suggest ---------------------- */
-
-  var ACTION_LABELS = {
-    detailed_reply: "✍️ Detailed reply",
-    quick_comment: "💬 Quick comment",
-    like_only: "👍 Like it",
-    skip: "⏭ Skip",
-  };
-
-  function readPagePosts(limit) {
-    return new Promise(function (resolve, reject) {
-      chrome.tabs.query({ active: true, lastFocusedWindow: true }, function (tabs) {
-        var tab = tabs && tabs[0];
-        if (!tab || !tab.url || tab.url.indexOf("skool.com") === -1) {
-          reject(new Error("Switch to your Skool community tab first, then try again."));
-          return;
-        }
-        chrome.tabs.sendMessage(tab.id, { type: "READ_PAGE_POSTS", limit: limit }, function (res) {
-          if (chrome.runtime.lastError) {
-            reject(new Error("Couldn't reach the page — reload your Skool tab once, then retry."));
-          } else if (!res || !res.ok) {
-            reject(new Error((res && res.error) || "Couldn't read the page."));
-          } else {
-            resolve(res);
-          }
-        });
-      });
-    });
-  }
-
-  async function readAndSuggest() {
-    $("sp-read-error").textContent = "";
-    $("sp-read-status").textContent = "";
-    var btn = $("sp-read");
-    btn.disabled = true;
-    btn.textContent = "Reading…";
-    try {
-      var settings = (await SC.storage.get("sc_ai_settings")) || {};
-      if (!settings.provider) throw new Error("No AI provider configured. Open Settings.");
-      var apiKey = await SC.vault.loadApiKey(settings.provider);
-      if (!apiKey) throw new Error("No API key stored for " + settings.provider + ". Open Settings.");
-
-      var limit = Number($("sp-read-count").value) || 0;
-      var page = await readPagePosts(limit);
-
-      // Keep the selected community in step with the tab being read.
-      var pageCommunity = communities.find(function (c) {
-        return (c.slug || SC.skoolSlug(c.skool_url)) === page.slug;
-      });
-      if (pageCommunity && (!current || pageCommunity.id !== current.id)) {
-        $("sp-community").value = pageCommunity.id;
-        await selectCommunity(pageCommunity.id);
-      }
-      if (!page.posts.length) {
-        throw new Error("No posts found on this page — scroll the feed a little and retry.");
-      }
-
-      $("sp-read-status").textContent =
-        "Read " + page.posts.length + " of " + page.totalOnPage +
-        " loaded post(s). Asking " + settings.provider + " for suggestions…";
-      btn.textContent = "Thinking…";
-
-      var voiceRows = current
-        ? await client.from("voice_profiles").select("*").eq("community_id", current.id).limit(1)
-        : [];
-      var voice = (voiceRows && voiceRows[0]) || {};
-
-      var text = await SC.generateDraft({
-        provider: settings.provider,
-        apiKey: apiKey,
-        model: settings.model,
-        system: SC.ENGAGE_SYSTEM_PROMPT,
-        maxTokens: 4000,
-        prompt: SC.buildEngagementPrompt({
-          communityName: current ? current.name : "",
-          voice: voice,
-          posts: page.posts,
-        }),
-      });
-
-      var suggestions = SC.parseEngagementSuggestions(text);
-      if (!suggestions) {
-        // Unparseable — show the raw text rather than nothing.
-        $("sp-suggestions").innerHTML =
-          '<p class="muted">Couldn\'t parse structured suggestions; raw response:</p>' +
-          "<textarea rows='10'>" + escapeHtml(text) + "</textarea>";
-      } else {
-        renderSuggestions(suggestions, page.posts);
-      }
-      $("sp-read-status").textContent =
-        "Suggestions for " + page.posts.length + " post(s) — copy any reply and paste it on Skool.";
-    } catch (e) {
-      $("sp-read-error").textContent = String((e && e.message) || e);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = "📖 Read & suggest";
-    }
-  }
-
-  function renderSuggestions(suggestions, posts) {
-    var host = $("sp-suggestions");
-    host.innerHTML = "";
-    suggestions.forEach(function (s, i) {
-      var post = posts[(s.post || i + 1) - 1] || posts[i] || {};
-      var div = document.createElement("div");
-      div.className = "sugg";
-      var snippet = (post.post_text || "").replace(/\s+/g, " ").slice(0, 110);
-      div.innerHTML =
-        '<div class="head"><span class="who">' + escapeHtml(post.author || "Member") +
-        '</span><span class="counts">' + (post.likes || 0) + " 👍 · " +
-        (post.comments || 0) + " 💬</span></div>" +
-        '<div class="snippet">' + escapeHtml(snippet) + "…</div>" +
-        '<span class="badge ' + escapeHtml(s.action) + '">' +
-        (ACTION_LABELS[s.action] || escapeHtml(s.action)) + "</span>" +
-        '<span class="why">' + escapeHtml(s.reason) + "</span>";
-      if (s.reply) {
-        var ta = document.createElement("textarea");
-        ta.rows = 3;
-        ta.value = s.reply;
-        div.appendChild(ta);
-        var row = document.createElement("div");
-        row.className = "row";
-        var copy = document.createElement("button");
-        copy.className = "btn small";
-        copy.type = "button";
-        copy.textContent = "📋 Copy reply";
-        copy.addEventListener("click", function () {
-          navigator.clipboard.writeText(ta.value).then(function () {
-            flash(copy, "✅ Copied");
-          });
-        });
-        row.appendChild(copy);
-        div.appendChild(row);
-      }
-      host.appendChild(div);
-    });
-  }
-
   /* ------------------------ page report capture --------------------- */
 
   async function capturePageReport() {
@@ -713,21 +575,24 @@
     host.innerHTML = "";
     var items = res.mode === "detail" ? [res.post] : (res.posts || []);
     items = items.filter(function (p) { return p && (p.title || p.body); });
-    if (!items.length) {
+    var comments = res.mode === "detail" ? (res.comments || []) : [];
+    if (!items.length && !comments.length) {
       $("sp-sa-status").textContent = res.mode === "detail"
-        ? "Couldn't read this post's text — scroll it into view and retry."
+        ? "Couldn't read this post — scroll it into view and retry."
         : "No posts found on this page — scroll the feed a little and retry.";
       return;
     }
     $("sp-sa-status").textContent = res.mode === "detail"
-      ? "On a post" + (res.comments && res.comments.length ? " with " + res.comments.length + " comment(s)" : "") +
-        " — draft replies below."
+      ? "On a post with " + comments.length + " comment(s) visible" +
+        (comments.length ? " — scroll the thread and re-read to load more." : ".")
       : "Found " + items.length + " post(s). Draft replies to any of them.";
+
+    // The post itself (feed: each post).
     items.forEach(function (post) {
       var div = document.createElement("div");
       div.className = "sugg";
       div._post = post;
-      div._comments = res.mode === "detail" ? (res.comments || []) : [];
+      div._comments = comments;
       var snippet = ((post.title ? post.title + " — " : "") + (post.body || "")).slice(0, 120);
       div.innerHTML =
         '<div class="head"><span class="who">' + escapeHtml(post.author || "Post") + "</span></div>" +
@@ -736,31 +601,89 @@
         '<p class="muted sa-item-status"></p><div class="sa-drafts"></div>';
       host.appendChild(div);
     });
+
+    // Detail mode: the comment feed itself — visible, copyable, answerable.
+    if (res.mode === "detail" && comments.length) {
+      var head = document.createElement("div");
+      head.className = "sa-comments-head";
+      head.innerHTML =
+        '<span class="who">💬 Comment feed (' + comments.length + ")</span>" +
+        '<button class="btn small" data-act="copy-thread" type="button">📋 Copy all</button>';
+      host.appendChild(head);
+      host._post = items[0] || res.post || null;
+      host._comments = comments;
+      comments.forEach(function (c, i) {
+        var div = document.createElement("div");
+        div.className = "sugg sa-comment";
+        div._comment = c;
+        div._post = host._post;
+        div._comments = comments;
+        div.innerHTML =
+          '<div class="head"><span class="who">' + escapeHtml(c.authorName || "Member") + "</span></div>" +
+          '<div class="snippet sa-comment-body">' + escapeHtml(c.body || "") + "</div>" +
+          '<div class="row">' +
+          '<button class="btn small primary" data-act="draft-comment">💬 Suggest answers</button>' +
+          '<button class="btn small" data-act="copy-comment">📋</button>' +
+          "</div>" +
+          '<p class="muted sa-item-status"></p><div class="sa-drafts"></div>';
+        host.appendChild(div);
+      });
+    }
+  }
+
+  function threadAsText(post, comments) {
+    var lines = [];
+    if (post && (post.title || post.body)) {
+      lines.push("POST" + (post.author ? " by " + post.author : "") + ":");
+      if (post.title) lines.push(post.title);
+      if (post.body) lines.push(post.body);
+      lines.push("");
+    }
+    lines.push("COMMENTS:");
+    (comments || []).forEach(function (c) {
+      lines.push("- " + (c.authorName || "member") + ": " + (c.body || ""));
+    });
+    return lines.join("\n");
   }
 
   async function onStandaloneClick(e) {
     var btn = e.target.closest("button[data-act]");
     if (!btn) return;
+    var act = btn.dataset.act;
+
+    // Copy the whole visible comment feed as plain text.
+    if (act === "copy-thread") {
+      var hostEl = $("sp-sa-posts");
+      navigator.clipboard.writeText(threadAsText(hostEl._post, hostEl._comments || []))
+        .then(function () { flash(btn, "✅ Copied"); });
+      return;
+    }
+
     var card = btn.closest(".sugg");
     if (!card) return;
-    var act = btn.dataset.act;
     var st = card.querySelector(".sa-item-status");
-    if (act === "draft") {
+
+    if (act === "draft" || act === "draft-comment") {
       btn.disabled = true; var old = btn.textContent; btn.textContent = "Drafting…";
       if (st) st.textContent = "";
       try {
-        var drafts = await standaloneDraft(card._post, card._comments);
+        var drafts = await standaloneDraft(card._post, card._comments,
+          act === "draft-comment" ? card._comment : null);
         renderStandaloneDrafts(card.querySelector(".sa-drafts"), drafts);
       } catch (err) {
         if (st) st.textContent = "❌ " + err.message;
       } finally { btn.disabled = false; btn.textContent = old; }
+    } else if (act === "copy-comment") {
+      var c = card._comment || {};
+      navigator.clipboard.writeText((c.authorName || "member") + ": " + (c.body || ""))
+        .then(function () { flash(btn, "✅"); });
     } else if (act === "copy") {
       var ta = card.querySelector('textarea[data-draft="' + btn.dataset.i + '"]');
       if (ta) navigator.clipboard.writeText(ta.value).then(function () { flash(btn, "✅"); });
     }
   }
 
-  async function standaloneDraft(post, comments) {
+  async function standaloneDraft(post, comments, replyTo) {
     var settings = (await SC.storage.get("sc_ai_settings")) || {};
     if (!settings.provider) throw new Error("No AI provider set. Open Settings and add your key.");
     var apiKey = await SC.vault.loadApiKey(settings.provider);
@@ -769,7 +692,10 @@
     var text = await SC.generateDraft({
       provider: settings.provider, apiKey: apiKey, model: settings.model,
       system: SC.LOCAL_REPLY_SYSTEM_PROMPT, maxTokens: 900,
-      prompt: SC.buildLocalReplyPrompt({ post: post, comments: comments, voice: voice, count: 3 }),
+      prompt: SC.buildLocalReplyPrompt({
+        post: post, comments: comments, replyTo: replyTo || null,
+        voice: voice, count: 3,
+      }),
     });
     var drafts = SC.parseReplyDrafts(text, 3);
     if (!drafts.length) throw new Error("Couldn't parse a reply from the model — try again.");
@@ -838,7 +764,6 @@
   });
   $("sp-generate").addEventListener("click", generate);
   $("sp-inbox").addEventListener("click", onInboxClick);
-  $("sp-read").addEventListener("click", readAndSuggest);
   $("sp-report").addEventListener("click", capturePageReport);
   $("sp-report-copy").addEventListener("click", function () {
     navigator.clipboard.writeText($("sp-report-output").value).then(function () {

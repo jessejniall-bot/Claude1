@@ -570,6 +570,36 @@
     }
 
     var comments = data ? collectNextDataComments(data) : [];
+    // DOM fallback for comments: Skool's SSR snapshot often omits comment
+    // text even on a post's own page. When we're on a post detail view and
+    // the data island gave nothing, read the rendered comment feed instead
+    // (class-free, via SC.extract). No timestamps in the DOM, so these rows
+    // power threads/participation, not latency math.
+    if (!comments.length && SC.extract && SC.extract.currentDetailPost) {
+      var detail = SC.extract.currentDetailPost();
+      if (detail) {
+        // Prefer the real Skool post id when the page data has this post;
+        // otherwise the stable slug still groups the thread correctly.
+        var pagePosts = data ? collectNextDataPosts(data) : [];
+        var postKey = detail.slug;
+        for (var pi = 0; pi < pagePosts.length; pi++) {
+          if (pagePosts[pi].post_name === detail.slug) { postKey = pagePosts[pi].post_key; break; }
+        }
+        comments = SC.extract.extractComments(50).map(function (c) {
+          return {
+            comment_key: "dom-" + hashText((c.author || "") + "|" + (c.body || "")),
+            post_key: postKey,
+            parent_comment_key: null,
+            comment_text: c.body || "",
+            author: c.authorName || null,
+            is_owner: false,
+            likes: 0,
+            commented_at: null,
+          };
+        }).filter(function (c) { return c.comment_text; });
+        if (comments.length) debug("comment DOM fallback:", comments.length, "on", detail.slug);
+      }
+    }
     comments = comments.filter(function (c) { return !state.sentCommentKeys[c.comment_key]; });
     debug("scrape pass:", comments.length, "new comments found");
     if (comments.length) {
@@ -711,54 +741,6 @@
     }
   }
 
-  // On-demand read for the side panel's "Read & suggest": returns the
-  // posts currently rendered on this page. Same gate as passive scraping —
-  // allowlist plus admin signal (or the explicit override).
-  chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
-    if (!msg || msg.type !== "READ_PAGE_POSTS") return;
-    if (!state.slug) {
-      sendResponse({ ok: false, error: "This tab isn't on a Skool community page." });
-      return;
-    }
-    if (!state.active) {
-      sendResponse({
-        ok: false,
-        slug: state.slug,
-        error: !state.allowed
-          ? "This community isn't in your allowlist."
-          : "No admin access detected here — tick the force-enable switch, then reload this tab.",
-      });
-      return;
-    }
-    var data = readNextData();
-    var posts = data ? collectNextDataPosts(data) : [];
-    if (!posts.length) posts = collectDomPosts();
-    var limit = msg.limit > 0 ? msg.limit : posts.length;
-    sendResponse({
-      ok: true,
-      slug: state.slug,
-      totalOnPage: posts.length,
-      posts: posts.slice(0, limit),
-    });
-  });
-
-  // On-demand read of the comment thread on the current (post-detail) page,
-  // for the side panel's per-post reply suggestions.
-  chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
-    if (!msg || msg.type !== "READ_PAGE_THREAD") return;
-    if (!state.slug) { sendResponse({ ok: false, error: "This tab isn't on a Skool community page." }); return; }
-    if (!state.active) {
-      sendResponse({ ok: false, slug: state.slug, error: !state.allowed
-        ? "This community isn't in your allowlist."
-        : "No admin access detected here — tick the force-enable switch, then reload this tab." });
-      return;
-    }
-    var data = readNextData();
-    var posts = data ? collectNextDataPosts(data) : [];
-    var comments = data ? collectNextDataComments(data) : [];
-    sendResponse({ ok: true, slug: state.slug, posts: posts, comments: comments });
-  });
-
   /* ---------------------- reply learn / replay --------------------- */
   // The MAIN-world net-observer learns Skool's real comment-create request
   // from the owner's own manual reply and posts the redacted template here;
@@ -785,20 +767,6 @@
       delete replyWaiters[d.id];
       resolve(d);
     }
-  });
-
-  // Whether a reply template has been learned + current page context.
-  chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
-    if (!msg || msg.type !== "GET_REPLY_CAPABILITY") return;
-    chrome.storage.local.get(REPLY_TEMPLATE_KEY, function (o) {
-      sendResponse({
-        ok: true,
-        slug: state.slug,
-        active: state.active,
-        hasTemplate: !!(o && o[REPLY_TEMPLATE_KEY]),
-      });
-    });
-    return true;
   });
 
   // Submit a reply from the live tab by replaying the learned template via the
@@ -867,7 +835,7 @@
       }
       var detail = SC.extract.currentDetailPost();
       if (detail) {
-        var comments = SC.extract.extractComments(12);
+        var comments = SC.extract.extractComments(40);
         sendResponse({ ok: true, mode: "detail", slug: state.slug, group: detail.group,
           post: detail, comments: comments });
       } else {
@@ -1053,43 +1021,6 @@
       sendResponse({ ok: false, error: String((e && e.message) || e) });
     }
   });
-
-  // Calibration helper: run SC_COPILOT_DIAGNOSE() in the page console and
-  // share the output to tune admin detection for Skool's current markup.
-  // It reports structure only — role values, JSON paths, and slug-related
-  // link hrefs — not post contents.
-  window.SC_COPILOT_DIAGNOSE = function () {
-    var out = { slug: state.slug, allowed: state.allowed, adminSignal: state.adminSignal,
-      override: state.override, roles: [], links: [] };
-    var data = readNextData();
-    if (data) {
-      var seen = 0;
-      (function walk(obj, path) {
-        if (!obj || typeof obj !== "object" || seen > 40) return;
-        for (var k in obj) {
-          if (!Object.prototype.hasOwnProperty.call(obj, k)) continue;
-          var v = obj[k];
-          if (/role/i.test(k) && (typeof v === "string" || typeof v === "number")) {
-            out.roles.push(path + "." + k + " = " + v);
-            seen++;
-          }
-          if (v && typeof v === "object") walk(v, path + "." + k);
-        }
-      })(data, "$");
-    } else {
-      out.roles.push("(no __NEXT_DATA__ found on this page)");
-    }
-    document.querySelectorAll("a[href]").forEach(function (a) {
-      var h = a.getAttribute("href") || "";
-      if (state.slug && h.indexOf(state.slug) !== -1 &&
-          /settings|admin|manage|dashboard|-\//i.test(h) && out.links.length < 20) {
-        out.links.push(h + "  (text: " + (a.textContent || "").trim().slice(0, 40) + ")");
-      }
-    });
-    console.log("=== Skool Copilot diagnostics — paste this back ===");
-    console.log(JSON.stringify(out, null, 2));
-    return out;
-  };
 
   // Re-evaluate on SPA navigations (Next.js router) and feed mutations.
   var lastHref = location.href;

@@ -5,6 +5,49 @@ judgment calls made where the spec left something open. This file exists so a
 future reader (human or AI) can see *why* a decision was made without having to
 reverse-engineer it from the diff.
 
+## v2.2 — Comment feed reader + audit cleanup
+
+Two things: the extension can now read the actual comment feed on a post (not
+just answer the post), and a pass to remove code that had been superseded.
+
+### Comment feed (the missing piece)
+
+Opening a post and hitting **📥 Read this page** now shows a **Comment feed**
+box under the post: every comment currently rendered on the page, each with:
+
+- **📋 Copy** the single comment, or **📋 Copy all** to grab the whole thread as
+  plain text, and
+- **💬 Suggest answers** — three reply options drafted in your voice that target
+  *that specific comment* (the post + the rest of the thread go in as context).
+
+This is powered by the class-free `SC.extract.extractComments()` reading the
+rendered DOM — the reliable path, since Skool's `__NEXT_DATA__` snapshot usually
+omits comment text even on a post's own page. The same DOM read now also feeds
+the passive comment sync (when signed in) as a fallback, so backend threads /
+the needs-response inbox fill in from post pages too. You still open the post
+yourself; the copilot reads what's on screen.
+
+`buildLocalReplyPrompt` gained a `replyTo` mode so a draft can answer one
+comment instead of the post.
+
+### Audit — removed as redundant / dead
+
+- **"Read & suggest" card** (the older `detailed_reply/quick_comment/like_only`
+  per-post JSON flow) — fully superseded by the standalone "Engage with this
+  page" drafter, which does the same job without a backend and now also handles
+  comments. Removed the card + its `ENGAGE_SYSTEM_PROMPT`,
+  `buildEngagementPrompt`, `parseEngagementSuggestions`, and the
+  `READ_PAGE_POSTS` message handler.
+- **`READ_PAGE_THREAD`** and **`GET_REPLY_CAPABILITY`** message handlers — never
+  called by any surface (leftovers from earlier iterations).
+- **`DRAIN_REPLIES`** background handler — dead; the queue drainer lives in the
+  content script and talks to `LIST_PENDING_REPLIES`/`MARK_REPLY` directly.
+- **`SC_COPILOT_DIAGNOSE()`** console helper — the in-panel "Capture page
+  report" button replaced it; docs updated to point there.
+- **Duplicate `sc_ai_settings` constant** in the PWA, merged.
+
+Everything removed was confirmed to have no remaining caller first.
+
 ## v2.1 — Standalone reply drafter (works with no account)
 
 The extension no longer needs the web app or a Supabase backend to be useful.

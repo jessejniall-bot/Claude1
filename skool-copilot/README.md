@@ -178,9 +178,11 @@ copy. Suggestion-only by design. Gated by the same ownership checks as scraping.
 The side panel's **Draft replies** card works with **no Supabase backend and no
 web app** — just an AI key (set in the extension's Options) and, ideally, a few
 of your own sample replies pasted in Options so drafts sound like you. Hit
-**📥 Read this page** on your community and it lists the posts found (or, on a
-post's page, that post + its comments); **✍️ Draft 3 replies** gives three
-options per post to copy. It reads Skool's DOM through the permalink anchor
+**📥 Read this page** on your community and it lists the posts found;
+**✍️ Draft 3 replies** gives three options per post to copy. **Open a post** and
+Read this page shows its **Comment feed** — copy any comment (or the whole
+thread), and **💬 Suggest answers** drafts three replies to that specific
+comment in your voice. It reads Skool's DOM through the permalink anchor
 (`content/extract.js`) — never hashed class names, always keyed on the stable
 `slug`, never the rotating `postId` — so Skool restyling only ever affects that
 one file. Suggestion-only: nothing is posted.

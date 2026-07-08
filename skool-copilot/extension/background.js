@@ -191,15 +191,6 @@ async function handleMarkReply(msg) {
   return { ok: true };
 }
 
-// Drain: for a freshly-loaded Skool tab, ask the backend for any pending
-// replies for that community and hand them to the content script to submit,
-// one at a time with spacing so a batch never fires as a burst.
-async function handleDrainReplies(msg) {
-  var res = await pendingRepliesForSlug(msg.slug);
-  if (!res.ok || !res.replies || !res.replies.length) return { ok: true, submitted: 0 };
-  return { ok: true, communityId: res.communityId, replies: res.replies };
-}
-
 async function handleSaveIdea(msg) {
   var client = await SC.getClient();
   if (!client) return { ok: false, error: "Backend not configured" };
@@ -221,7 +212,6 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
   else if (msg && msg.type === "SCRAPED_COMMENTS") handler = handleScrapedComments;
   else if (msg && msg.type === "SAVE_IDEA") handler = handleSaveIdea;
   else if (msg && msg.type === "LIST_PENDING_REPLIES") handler = handleListPendingReplies;
-  else if (msg && msg.type === "DRAIN_REPLIES") handler = handleDrainReplies;
   else if (msg && msg.type === "MARK_REPLY") handler = handleMarkReply;
   else if (msg && msg.type === "REFRESH_COMMUNITIES") {
     refreshCommunities()
