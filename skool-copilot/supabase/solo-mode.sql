@@ -39,7 +39,7 @@ end $$;
 -- begin
 --   foreach t in array array[
 --     'communities', 'pillars', 'voice_profiles', 'scraped_posts',
---     'scraped_comments', 'ideas', 'drafts', 'queue'
+--     'scraped_comments', 'ideas', 'drafts', 'queue', 'reply_queue'
 --   ]
 --   loop
 --     execute format('drop policy if exists "solo mode" on public.%I', t);

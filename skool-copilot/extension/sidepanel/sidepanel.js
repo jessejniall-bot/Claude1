@@ -32,16 +32,23 @@
       if (client && (solo || user)) {
         backendMode(true);
         await showMain();
-      } else {
+      } else if (client) {
+        // Backend is configured but we're signed out — offer to skip
+        // sign-in for good, right here, or sign in with email.
         backendMode(false);
-        $("sp-backend-note").innerHTML = client
-          ? "Signed out. The reply drafter below works as-is; " +
-            "<button id=\"sp-connect\" class=\"link\" type=\"button\">sign in</button> " +
-            "to also track community health."
-          : "No account connected — the reply drafter below works as-is. " +
-            "<button id=\"sp-connect\" class=\"link\" type=\"button\">Connect an account</button> " +
-            "(optional) to track community health, or set your AI key in " +
-            "<button id=\"sp-open-settings\" class=\"link\" type=\"button\">Settings</button>.";
+        $("sp-backend-note").innerHTML =
+          "Signed out. The reply drafter below works as-is; " +
+          "<button id=\"sp-connect\" class=\"link\" type=\"button\">skip sign-in for good</button> " +
+          "to also track community health with zero sign-in.";
+        wireBackendNote();
+      } else {
+        // No backend configured at all yet — that's the real first step.
+        backendMode(false);
+        $("sp-backend-note").innerHTML =
+          "No account connected — the reply drafter below works as-is. Add your " +
+          "Supabase project in " +
+          "<button id=\"sp-open-settings\" class=\"link\" type=\"button\">Settings</button> " +
+          "(free, a couple minutes) to also track community health, or just set your AI key there.";
         wireBackendNote();
       }
     } catch (e) {
@@ -64,8 +71,8 @@
     var connect = $("sp-connect");
     if (connect) {
       connect.addEventListener("click", function () {
-        showAuth("Sign in with the same account you use in the Copilot web app. " +
-          "(Or enable solo mode in the web app — it removes sign-in here too.)");
+        showAuth("Skip sign-in for good below — or use the \"Prefer an account\" link " +
+          "if you'd rather sign in with email.");
       });
     }
     var settings = $("sp-open-settings");
@@ -76,7 +83,6 @@
     $("sp-auth").classList.remove("hidden");
     $("sp-main").classList.add("hidden");
     $("sp-auth-note").textContent = note;
-    fillRedirectUrl();
   }
 
   async function showMain() {
@@ -690,37 +696,47 @@
     });
   }
 
-  /* ----------------------------- auth ------------------------------ */
+  /* ------------------------- skip sign-in (solo) -------------------- */
+  // Enables solo mode directly from the panel — no trip to the web app
+  // required. Mirrors the PWA's probe: an insert only succeeds without a
+  // session once the solo-mode SQL has opened the tables to the anon key.
 
-  // Show the redirect URL the user must whitelist in Supabase for Google.
-  function fillRedirectUrl() {
-    var url = SC.oauthRedirectURL && SC.oauthRedirectURL();
-    var el = $("sp-redirect-url");
-    if (el) el.textContent = url || "(open this panel as an extension to see it)";
+  function copySoloSql() {
+    navigator.clipboard.writeText(SC.SOLO_MODE_SQL || "").then(function () {
+      flash($("sp-solo-copy-sql"), "✅ Copied");
+    });
   }
 
-  async function signInWithGoogle() {
-    $("sp-auth-error").textContent = "";
-    var btn = $("sp-google");
+  async function enableSolo() {
+    $("sp-solo-status").textContent = "Checking whether the setup script has been run…";
+    var btn = $("sp-solo-enable");
     btn.disabled = true;
     try {
-      if (!client) {
-        throw new Error("Add your Supabase URL + key in Settings first — Google signs you " +
-          "into that backend. (Or skip accounts entirely: the Read & reply features above " +
-          "need no sign-in.)");
+      if (!client) throw new Error("Add your Supabase URL + key in Settings first.");
+      var probe = await client.from("communities").insert({
+        name: "__solo_probe__",
+        skool_url: "https://www.skool.com/__solo-probe__",
+      });
+      if (probe && probe[0] && probe[0].id) {
+        await client.from("communities").delete().eq("id", probe[0].id);
       }
-      await client.signInWithOAuth("google");
+      await SC.enableSolo();
+      $("sp-solo-status").textContent = "✅ Sign-in is off for good — loading…";
       chrome.runtime.sendMessage({ type: "REFRESH_COMMUNITIES" }, function () {
         void chrome.runtime.lastError;
       });
-      await showMain();
+      location.reload();
     } catch (e) {
-      $("sp-auth-error").textContent = SC.friendlyAuthError(e);
-      $("sp-google-help").open = true; // surface the setup steps on failure
+      $("sp-solo-status").textContent =
+        "❌ Not yet — the database still requires sign-in. Copy the setup script above, " +
+        "paste it into Supabase → SQL Editor → Run, then click Enable again. " +
+        "(Details: " + String((e && e.message) || e) + ")";
     } finally {
       btn.disabled = false;
     }
   }
+
+  /* ----------------------------- auth ------------------------------ */
 
   async function signIn(isSignUp) {
     $("sp-auth-error").textContent = "";
@@ -758,12 +774,8 @@
   });
   $("sp-signin").addEventListener("click", function () { signIn(false); });
   $("sp-signup").addEventListener("click", function () { signIn(true); });
-  $("sp-google").addEventListener("click", signInWithGoogle);
-  $("sp-copy-redirect").addEventListener("click", function () {
-    navigator.clipboard.writeText($("sp-redirect-url").textContent || "").then(function () {
-      flash($("sp-copy-redirect"), "✅ Copied");
-    });
-  });
+  $("sp-solo-copy-sql").addEventListener("click", copySoloSql);
+  $("sp-solo-enable").addEventListener("click", enableSolo);
   $("sp-community").addEventListener("change", function (e) {
     selectCommunity(e.target.value);
   });
