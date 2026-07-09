@@ -93,21 +93,19 @@ copy) — it never clicks or posts for you.
   not configured / sign-in needed / exact error). Follow what it says.
 - **"Test backend" fails** — the message tells you which of the three inputs
   is wrong: unreachable URL, rejected anon key, or schema not installed.
-- **Posts/comments never sync, even with the override on** — Skool's page
-  structure has likely changed in a way the extraction code doesn't
-  recognize at all (not just the admin check). In the side panel, scroll to
-  **Troubleshooting → 🔬 Capture page report**, click it, then **📋 Copy
-  report** and send the output to Claude — it reports page structure (element
-  counts, class names, data shapes), not member content, except capped raw
-  samples under "flight data" which may include real post text, so skim
-  before sharing. This is the fastest path to getting extraction fixed for
-  real.
+- **Sign in with Google** — in the side panel's sign-in card, click **Sign in
+  with Google**. One-time setup in your Supabase project: **Authentication →
+  Providers → Google** (enable it), then **Authentication → URL Configuration →
+  Redirect URLs** and paste the exact redirect URL shown under the button's
+  "Google sign-in setup" note. Google here signs you into *your own backend*,
+  not into Skool. Prefer no accounts at all? The **Read & reply** features need
+  no sign-in — just an AI key in Settings — and **solo mode** removes sign-in
+  from the health dashboard too.
 - **Comments/threads aren't syncing** — Skool's community *feed* only carries a
   comment count, not the text. Comment threads sync when you open an
   **individual post** (its detail page carries the full tree). So browse into a
   few posts with the extension active; the **Inbox → Conversations** view fills
-  in from there. If a post's thread still doesn't appear, capture a page report
-  from that post's page (not the feed) and share it so extraction can be tuned.
+  in from there.
 - **"Post on Skool" says it needs to learn first** — posting a reply replays
   Skool's own request, which the extension learns from you: reply to any one
   comment *manually* on Skool once, then the button can post directly. Until
@@ -116,10 +114,7 @@ copy) — it never clicks or posts for you.
   markup changed and automatic detection missed it. Open the side panel,
   select the community, and tick **"Force-enable scraping here"**, then
   reload the Skool tab — the pill turns green ("manual admin override").
-  The allowlist + ownership pledge still apply. To help fix detection
-  properly, use **Troubleshooting → 🔬 Capture page report** and share the
-  output — it reports page structure (role fields and admin-ish links), not
-  post contents.
+  The allowlist + ownership pledge still apply.
 - **Pill stuck at 0 synced on a community you admin** — hover the pill: it
   shows which admin signal matched and the sync counters. Run
   `window.SC_COPILOT_DEBUG = true` in the page console for per-pass logs.

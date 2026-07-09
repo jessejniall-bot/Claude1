@@ -211,6 +211,75 @@
     return this._storeAuthResult(data);
   };
 
+  // The redirect URL an extension must whitelist in Supabase for OAuth
+  // (Authentication → URL Configuration → Redirect URLs). Stable per install.
+  SC.oauthRedirectURL = function () {
+    try {
+      if (typeof chrome !== "undefined" && chrome.identity && chrome.identity.getRedirectURL) {
+        return chrome.identity.getRedirectURL();
+      }
+    } catch (e) { /* not in an extension context */ }
+    return null;
+  };
+
+  // Sign in with a third-party provider (e.g. "google") using Chrome's
+  // web-auth flow. Supabase returns the session in the redirect's URL
+  // fragment; we parse it, store it, then fetch the user record.
+  SupabaseLite.prototype.signInWithOAuth = async function (provider) {
+    if (typeof chrome === "undefined" || !chrome.identity || !chrome.identity.launchWebAuthFlow) {
+      throw new Error("Google sign-in needs the extension's identity permission — reinstall the latest build.");
+    }
+    var redirectUri = chrome.identity.getRedirectURL();
+    var authUrl = this.url + "/auth/v1/authorize?provider=" +
+      encodeURIComponent(provider) + "&redirect_to=" + encodeURIComponent(redirectUri);
+    var responseUrl = await new Promise(function (resolve, reject) {
+      chrome.identity.launchWebAuthFlow({ url: authUrl, interactive: true }, function (url) {
+        if (chrome.runtime.lastError || !url) {
+          reject(new Error((chrome.runtime.lastError && chrome.runtime.lastError.message) ||
+            "Sign-in was cancelled."));
+        } else resolve(url);
+      });
+    });
+    var hash = responseUrl.indexOf("#") !== -1 ? responseUrl.split("#")[1] : "";
+    var query = responseUrl.indexOf("?") !== -1 ? responseUrl.split("?")[1].split("#")[0] : "";
+    var params = new URLSearchParams(hash || query);
+    if (params.get("error_description") || params.get("error")) {
+      throw SupabaseError(params.get("error_description") || params.get("error"), 400);
+    }
+    var access = params.get("access_token");
+    if (!access) {
+      throw new Error("Google didn't return a session. In Supabase, enable Google " +
+        "(Authentication → Providers) and add this extension's redirect URL to the " +
+        "allowed Redirect URLs.");
+    }
+    await this._storeAuthResult({
+      access_token: access,
+      refresh_token: params.get("refresh_token"),
+      expires_at: Math.floor(Date.now() / 1000) + (Number(params.get("expires_in")) || 3600),
+      user: null,
+    });
+    await this.fetchUser();
+    return this._session;
+  };
+
+  // GoTrue's implicit flow hands back tokens but not the user object; fetch it.
+  SupabaseLite.prototype.fetchUser = async function () {
+    var s = await this._getSession();
+    if (!s) return null;
+    try {
+      var res = await fetch(this.url + "/auth/v1/user", {
+        headers: { apikey: this.anonKey, Authorization: "Bearer " + s.access_token },
+      });
+      var body = await parseJsonSafe(res);
+      if (res.ok && body && body.id) {
+        s.user = body;
+        await this._setSession(s);
+        return body;
+      }
+    } catch (e) { /* keep whatever we had */ }
+    return s.user;
+  };
+
   SupabaseLite.prototype.refresh = async function () {
     var s = await this._getSession();
     if (!s || !s.refresh_token) return null;
