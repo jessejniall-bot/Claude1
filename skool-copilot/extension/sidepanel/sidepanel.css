@@ -195,3 +195,15 @@ textarea:focus, input:focus, select:focus { outline: 2px solid var(--accent); ou
 .sa-comments-head .who { font-weight: 700; }
 .sa-comment { border-left: 2px solid var(--line); padding-left: 10px; }
 .sa-comment-body { white-space: pre-wrap; }
+
+/* Google sign-in + auth helpers */
+.btn.google { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; background: #fff; color: #1f1f1f; border: 1px solid #dadce0; }
+.btn.google .g { font-weight: 800; color: #4285f4; font-family: Georgia, serif; }
+.btn.google:hover { filter: brightness(0.98); }
+@media (prefers-color-scheme: dark) { .btn.google { background: #1f2023; color: #e8eaed; border-color: #3c4043; } }
+.or-sep { text-align: center; margin: 10px 0 6px; }
+.help.help { margin-top: 10px; }
+.help summary { cursor: pointer; color: var(--accent); }
+.redirect { display: block; word-break: break-all; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin: 6px 0; font-size: 11px; }
+.how-to { padding-left: 18px; margin: 4px 0 8px; }
+.how-to li { margin: 3px 0; }

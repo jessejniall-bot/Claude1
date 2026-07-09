@@ -5,6 +5,28 @@ judgment calls made where the spec left something open. This file exists so a
 future reader (human or AI) can see *why* a decision was made without having to
 reverse-engineer it from the diff.
 
+## v2.3 — Google sign-in, clearer panel, comment-feed reading surfaced
+
+- **Sign in with Google** (extension v0.6.0). New button in the side panel's
+  sign-in card. Uses Chrome's `identity` web-auth flow against Supabase's OAuth
+  (`/auth/v1/authorize?provider=google`), parses the returned session from the
+  redirect fragment, and fetches the user record. Added the `identity`
+  permission. The card shows the exact **redirect URL** to whitelist in Supabase
+  (Authentication → URL Configuration), with a copy button, and a collapsible
+  one-time-setup note. Email/password sign-in stays; both now give a clear
+  "add your Supabase URL in Settings first" message instead of a vague error
+  when no backend is configured. **Note:** Google authenticates you to *your
+  Supabase backend*, not to Skool — the two are separate.
+- **Removed the Troubleshooting / "Capture page report" section** entirely, as
+  requested — the card, its side-panel wiring, and the now-dead
+  `CAPTURE_PAGE_REPORT` content-script handler plus `collectPageReport` /
+  `summarizeValue` / `normalizeClassName` helpers. (If Skool restyles and
+  extraction needs recalibrating later, that tool can be restored.)
+- **Clearer engage card.** Renamed to **Read & reply** with a two-step "how to
+  use" (feed → lists posts; open a post → reads its comment feed), plus a
+  comment-count selector (15 / 40 / 100). The comment-feed reading itself
+  already shipped in v0.5.0; this makes it discoverable and controllable.
+
 ## v2.2 — Comment feed reader + audit cleanup
 
 Two things: the extension can now read the actual comment feed on a post (not

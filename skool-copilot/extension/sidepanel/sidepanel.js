@@ -76,6 +76,7 @@
     $("sp-auth").classList.remove("hidden");
     $("sp-main").classList.add("hidden");
     $("sp-auth-note").textContent = note;
+    fillRedirectUrl();
   }
 
   async function showMain() {
@@ -456,40 +457,6 @@
     setTimeout(function () { btn.textContent = original; }, 1400);
   }
 
-  /* ------------------------ page report capture --------------------- */
-
-  async function capturePageReport() {
-    $("sp-report-error").textContent = "";
-    var btn = $("sp-report");
-    btn.disabled = true;
-    btn.textContent = "Capturing…";
-    try {
-      var tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-      var tab = tabs && tabs[0];
-      if (!tab || !tab.url || tab.url.indexOf("skool.com") === -1) {
-        throw new Error("Switch to your Skool community tab first, then try again.");
-      }
-      var res = await new Promise(function (resolve, reject) {
-        chrome.tabs.sendMessage(tab.id, { type: "CAPTURE_PAGE_REPORT" }, function (r) {
-          if (chrome.runtime.lastError) {
-            reject(new Error("Couldn't reach the page — reload your Skool tab once, then retry."));
-          } else if (!r || !r.ok) {
-            reject(new Error((r && r.error) || "Couldn't capture a report."));
-          } else {
-            resolve(r);
-          }
-        });
-      });
-      $("sp-report-output").value = JSON.stringify(res.report, null, 2);
-      $("sp-report-box").classList.remove("hidden");
-    } catch (e) {
-      $("sp-report-error").textContent = String((e && e.message) || e);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = "🔬 Capture page report";
-    }
-  }
-
   /* ------------------ standalone reply drafter --------------------- */
   // Works with NO backend: reads the current Skool tab via the content
   // script's class-free extractor and drafts replies from the LOCAL voice
@@ -546,8 +513,9 @@
     btn.disabled = true; btn.textContent = "Reading…";
     try {
       var tab = await queryActiveSkoolTab();
+      var limit = Number($("sp-sa-limit").value) || 40;
       var res = await new Promise(function (resolve, reject) {
-        chrome.tabs.sendMessage(tab.id, { type: "READ_PAGE_DRAFTS_SOURCE" }, function (r) {
+        chrome.tabs.sendMessage(tab.id, { type: "READ_PAGE_DRAFTS_SOURCE", limit: limit }, function (r) {
           if (chrome.runtime.lastError) reject(new Error("Couldn't reach the page — reload your Skool tab once, then retry."));
           else resolve(r);
         });
@@ -724,10 +692,41 @@
 
   /* ----------------------------- auth ------------------------------ */
 
+  // Show the redirect URL the user must whitelist in Supabase for Google.
+  function fillRedirectUrl() {
+    var url = SC.oauthRedirectURL && SC.oauthRedirectURL();
+    var el = $("sp-redirect-url");
+    if (el) el.textContent = url || "(open this panel as an extension to see it)";
+  }
+
+  async function signInWithGoogle() {
+    $("sp-auth-error").textContent = "";
+    var btn = $("sp-google");
+    btn.disabled = true;
+    try {
+      if (!client) {
+        throw new Error("Add your Supabase URL + key in Settings first — Google signs you " +
+          "into that backend. (Or skip accounts entirely: the Read & reply features above " +
+          "need no sign-in.)");
+      }
+      await client.signInWithOAuth("google");
+      chrome.runtime.sendMessage({ type: "REFRESH_COMMUNITIES" }, function () {
+        void chrome.runtime.lastError;
+      });
+      await showMain();
+    } catch (e) {
+      $("sp-auth-error").textContent = SC.friendlyAuthError(e);
+      $("sp-google-help").open = true; // surface the setup steps on failure
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
   async function signIn(isSignUp) {
     $("sp-auth-error").textContent = "";
     try {
-      if (!client) throw new Error("Configure the backend in Settings first.");
+      if (!client) throw new Error("Add your Supabase URL + key in Settings first. " +
+        "(Or skip accounts: the Read & reply features above need no sign-in.)");
       var email = $("sp-email").value.trim();
       var password = $("sp-password").value;
       if (isSignUp) {
@@ -759,17 +758,17 @@
   });
   $("sp-signin").addEventListener("click", function () { signIn(false); });
   $("sp-signup").addEventListener("click", function () { signIn(true); });
+  $("sp-google").addEventListener("click", signInWithGoogle);
+  $("sp-copy-redirect").addEventListener("click", function () {
+    navigator.clipboard.writeText($("sp-redirect-url").textContent || "").then(function () {
+      flash($("sp-copy-redirect"), "✅ Copied");
+    });
+  });
   $("sp-community").addEventListener("change", function (e) {
     selectCommunity(e.target.value);
   });
   $("sp-generate").addEventListener("click", generate);
   $("sp-inbox").addEventListener("click", onInboxClick);
-  $("sp-report").addEventListener("click", capturePageReport);
-  $("sp-report-copy").addEventListener("click", function () {
-    navigator.clipboard.writeText($("sp-report-output").value).then(function () {
-      flash($("sp-report-copy"), "✅ Copied");
-    });
-  });
   $("sp-copy").addEventListener("click", copyDraft);
   $("sp-save").addEventListener("click", saveDraft);
   $("sp-add-save").addEventListener("click", addCommunity);

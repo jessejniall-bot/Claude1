@@ -15,6 +15,10 @@
   <!-- Not configured / not signed in -->
   <section id="sp-auth" class="card hidden">
     <p id="sp-auth-note" class="muted"></p>
+    <button id="sp-google" class="btn google" type="button">
+      <span class="g">G</span> Sign in with Google
+    </button>
+    <p class="muted or-sep">or use email</p>
     <label>Email <input id="sp-email" type="email" autocomplete="email" /></label>
     <label>Password <input id="sp-password" type="password" autocomplete="current-password" /></label>
     <div class="row">
@@ -22,6 +26,15 @@
       <button id="sp-signup" class="btn" type="button">Sign up</button>
     </div>
     <p id="sp-auth-error" class="error"></p>
+    <details id="sp-google-help" class="muted help">
+      <summary>Google sign-in setup (one time)</summary>
+      <p>In your Supabase project: <em>Authentication → Providers → Google</em> (enable it),
+        then <em>Authentication → URL Configuration → Redirect URLs</em> and add this exact URL:</p>
+      <code id="sp-redirect-url" class="redirect"></code>
+      <button id="sp-copy-redirect" class="btn small" type="button">📋 Copy redirect URL</button>
+      <p>Google here signs you into <strong>your own backend</strong> — it doesn't connect to
+        Skool itself.</p>
+    </details>
   </section>
 
   <!-- Main -->
@@ -29,19 +42,29 @@
 
     <!-- Engage card — works with NO account/backend -->
     <section class="card" id="sp-standalone">
-      <h2>Engage with this page</h2>
-      <p class="muted">On the feed: lists the posts and drafts replies to any of
-        them. On an open post: shows its <strong>comment feed</strong> so you can
-        copy it or get suggested answers to any comment — in your voice, no
-        account needed. Nothing is ever posted for you.</p>
+      <h2>Read &amp; reply</h2>
+      <ol class="how-to muted">
+        <li><strong>On the main feed</strong> → lists every post; draft replies to any.</li>
+        <li><strong>Open a post</strong> → reads its <strong>comment feed</strong>: copy it,
+          or get suggested answers to any single comment.</li>
+      </ol>
+      <p class="muted">Everything is in your voice and copy-only — nothing is ever
+        posted for you. No account needed.</p>
+      <div class="row">
+        <button id="sp-sa-read" class="btn primary" type="button">📥 Read this page</button>
+        <label class="inline-select">Comments
+          <select id="sp-sa-limit">
+            <option value="15">15</option>
+            <option value="40" selected>40</option>
+            <option value="100">100</option>
+          </select>
+        </label>
+      </div>
       <label class="check-row hidden" id="sp-sa-override-row"
              title="Only tick this if you really admin this community.">
         <input id="sp-sa-override" type="checkbox" />
         <span>Force-enable here (Skool page shows no admin markers)</span>
       </label>
-      <div class="row">
-        <button id="sp-sa-read" class="btn primary" type="button">📥 Read this page</button>
-      </div>
       <p id="sp-sa-status" class="muted"></p>
       <p id="sp-sa-error" class="error"></p>
       <div id="sp-sa-posts"></div>
@@ -119,21 +142,6 @@
       </div>
     </section>
 
-    <section class="card">
-      <h2>Troubleshooting</h2>
-      <p class="muted">Not seeing posts sync? Capture a structural snapshot of the
-        current Skool page and send it to Claude so detection can be tuned to
-        match. Most of this is structure only (element counts, class names, field
-        names) — but <strong>"feedSample" and "flight data" include short (≤50
-        character) previews of real field values</strong>, which may be post or
-        comment text. Skim before sharing.</p>
-      <button id="sp-report" class="btn" type="button">🔬 Capture page report</button>
-      <p id="sp-report-error" class="error"></p>
-      <div id="sp-report-box" class="hidden">
-        <textarea id="sp-report-output" rows="12" readonly></textarea>
-        <button id="sp-report-copy" class="btn small" type="button">📋 Copy report</button>
-      </div>
-    </section>
   </main>
 
   <script src="../shared/config.js"></script>
