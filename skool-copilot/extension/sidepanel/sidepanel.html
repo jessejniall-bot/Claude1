@@ -15,25 +15,30 @@
   <!-- Not configured / not signed in -->
   <section id="sp-auth" class="card hidden">
     <p id="sp-auth-note" class="muted"></p>
-    <button id="sp-google" class="btn google" type="button">
-      <span class="g">G</span> Sign in with Google
-    </button>
-    <p class="muted or-sep">or use email</p>
-    <label>Email <input id="sp-email" type="email" autocomplete="email" /></label>
-    <label>Password <input id="sp-password" type="password" autocomplete="current-password" /></label>
-    <div class="row">
-      <button id="sp-signin" class="btn primary" type="button">Sign in</button>
-      <button id="sp-signup" class="btn" type="button">Sign up</button>
+
+    <!-- Primary path: skip sign-in for good (solo mode) -->
+    <div id="sp-solo-block">
+      <h2>Skip sign-in — one time, then never again</h2>
+      <p class="muted">Turns off sign-in permanently, on the extension and the web
+        app. Two steps, about a minute, in your own Supabase project:</p>
+      <ol class="muted steps">
+        <li><button id="sp-solo-copy-sql" class="btn small" type="button">📋 Copy setup script</button>
+          then paste &amp; run it in Supabase → <em>SQL Editor</em></li>
+        <li><button id="sp-solo-enable" class="btn primary" type="button">🔓 Enable — skip sign-in</button></li>
+      </ol>
+      <p id="sp-solo-status" class="muted"></p>
     </div>
-    <p id="sp-auth-error" class="error"></p>
-    <details id="sp-google-help" class="muted help">
-      <summary>Google sign-in setup (one time)</summary>
-      <p>In your Supabase project: <em>Authentication → Providers → Google</em> (enable it),
-        then <em>Authentication → URL Configuration → Redirect URLs</em> and add this exact URL:</p>
-      <code id="sp-redirect-url" class="redirect"></code>
-      <button id="sp-copy-redirect" class="btn small" type="button">📋 Copy redirect URL</button>
-      <p>Google here signs you into <strong>your own backend</strong> — it doesn't connect to
-        Skool itself.</p>
+
+    <!-- Secondary: plain email/password, for anyone who wants a real account -->
+    <details id="sp-email-block" class="help">
+      <summary>Prefer an account instead? Sign in with email</summary>
+      <label>Email <input id="sp-email" type="email" autocomplete="email" /></label>
+      <label>Password <input id="sp-password" type="password" autocomplete="current-password" /></label>
+      <div class="row">
+        <button id="sp-signin" class="btn primary" type="button">Sign in</button>
+        <button id="sp-signup" class="btn" type="button">Sign up</button>
+      </div>
+      <p id="sp-auth-error" class="error"></p>
     </details>
   </section>
 
@@ -151,6 +156,7 @@
   <script src="../shared/health-engine.js"></script>
   <script src="../shared/unicode-style.js"></script>
   <script src="../shared/voice-local.js"></script>
+  <script src="../shared/solo-sql.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>

@@ -40,14 +40,16 @@ deep-review buttons make real calls even in demo mode.
 5. Create your account, add your community (name + Skool URL + the ownership
    checkbox), paste an AI key in Settings. Done with the web side.
 
-**Don't want accounts at all?** Use **solo mode** — it removes the sign-in
-screen from both the app and the extension (meant for a personal,
-single-user setup). On the sign-in screen: click **📋 Copy solo-mode SQL**,
-run it once in Supabase → SQL Editor, then click **🔓 Enable solo mode**.
-After that there is no sign-in anywhere; the extension picks the setting up
-automatically the next time you open the web app. ⚠️ Trade-off: anyone with
-your project URL + anon key could then read/write your data, so don't share
-those two values. (This also sidesteps every email-confirmation headache.)
+**Don't want accounts at all? This is the recommended path.** Use **solo
+mode** — it removes the sign-in screen from both the app and the extension
+(meant for a personal, single-user setup). You can turn it on from either
+surface — the extension's side panel now does this without needing the web
+app at all: on the sign-in card, click **📋 Copy setup script**, paste it into
+Supabase → SQL Editor → Run, then click **🔓 Enable — skip sign-in**. After
+that there is no sign-in anywhere, on either surface, permanently. ⚠️
+Trade-off: anyone with your project URL + anon key could then read/write your
+data, so don't share those two values. (This also sidesteps every
+email-confirmation headache.)
 To go back to accounts later, the revert SQL is at the bottom of
 `supabase/solo-mode.sql`.
 
@@ -93,14 +95,15 @@ copy) — it never clicks or posts for you.
   not configured / sign-in needed / exact error). Follow what it says.
 - **"Test backend" fails** — the message tells you which of the three inputs
   is wrong: unreachable URL, rejected anon key, or schema not installed.
-- **Sign in with Google** — in the side panel's sign-in card, click **Sign in
-  with Google**. One-time setup in your Supabase project: **Authentication →
-  Providers → Google** (enable it), then **Authentication → URL Configuration →
-  Redirect URLs** and paste the exact redirect URL shown under the button's
-  "Google sign-in setup" note. Google here signs you into *your own backend*,
-  not into Skool. Prefer no accounts at all? The **Read & reply** features need
-  no sign-in — just an AI key in Settings — and **solo mode** removes sign-in
-  from the health dashboard too.
+- **Don't want to sign in at all** — you don't have to. The **Read & reply**
+  features need no sign-in, ever (just an AI key in Settings). For the health
+  dashboard too, use the side panel's sign-in card: **📋 Copy setup script** →
+  paste + run in Supabase → SQL Editor → **🔓 Enable — skip sign-in**. One
+  minute, then no sign-in anywhere, permanently. (There's no Google sign-in
+  option — it required a separate Google Cloud Console project + OAuth setup
+  per install, which was a lot of friction for what this needs. Solo mode
+  above is the recommended path; a plain email/password option is still there
+  under "Prefer an account?" if you want one.)
 - **Comments/threads aren't syncing** — Skool's community *feed* only carries a
   comment count, not the text. Comment threads sync when you open an
   **individual post** (its detail page carries the full tree). So browse into a

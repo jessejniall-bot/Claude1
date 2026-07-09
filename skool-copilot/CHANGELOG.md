@@ -5,6 +5,50 @@ judgment calls made where the spec left something open. This file exists so a
 future reader (human or AI) can see *why* a decision was made without having to
 reverse-engineer it from the diff.
 
+## v2.4 — Reverted Google sign-in; skip sign-in from the panel directly
+
+Real-world follow-up to v2.3: the user hit exactly the wall that section's
+honest caveat warned about — Google requires its own Google Cloud Console
+project, OAuth consent screen, and client credentials before Supabase's
+"enable Google" toggle even works, and then a Client-ID-field validation
+error, and then Chrome's `identity` flow failing to load the authorize page at
+all. That's three separate failure points before a single sign-in succeeded.
+Explicit feedback: *"I don't want sign-in to be so damn complicated... this is
+far too complex."* Asked directly (no accounts / email-only / keep debugging
+Google) — chose no accounts.
+
+**What shipped**
+
+- **Removed Google sign-in entirely** — the button, its setup-help block, the
+  `identity` permission, and `signInWithOAuth` / `oauthRedirectURL` /
+  `fetchUser` from `supabase-lite.js`. Not disabled, removed: it added a
+  Chrome permission prompt and real setup burden for a path that was never
+  going to be simple, for a use case (one person, one community) that doesn't
+  need multi-provider auth.
+- **Solo mode is now enabled directly from the side panel** — previously it
+  could only be turned on from the PWA, meaning "skip sign-in" itself required
+  a detour through the thing it was meant to skip. Since a packaged Chrome
+  extension can only read files inside its own directory (it can't `fetch()`
+  `../supabase/solo-mode.sql` the way the PWA does), the SQL is now also
+  bundled as a JS string in `shared/solo-sql.js`, kept byte-identical to
+  `supabase/solo-mode.sql` (verified by a diff script before shipping — and
+  that check caught a real pre-existing bug: the source file's "how to revert"
+  comment was missing `reply_queue` from the table list, fixed in both places).
+  The panel's sign-in card now leads with **"Skip sign-in — one time, then
+  never again"**: copy the setup script, run it once in Supabase, click
+  Enable. Same probe pattern the PWA already used (a test insert only
+  succeeds once the SQL has run), so it's exactly as safe. Email/password
+  sign-in is kept, but demoted to a collapsed "prefer an account?" option
+  underneath — still there for anyone who wants real per-user accounts, no
+  longer the assumed default.
+
+**Decision:** don't quietly patch the OAuth flow and hope the next error is
+the last one. The actual problem wasn't a bug — it's that Google sign-in is
+inherently multi-step for any app, and this product's real audience (one
+person running their own community) never needed multiple accounts. Solo mode
+already existed and already solved this; the fix was making it reachable
+without leaving the extension, not making OAuth more resilient.
+
 ## v2.3 — Google sign-in, clearer panel, comment-feed reading surfaced
 
 - **Sign in with Google** (extension v0.6.0). New button in the side panel's
