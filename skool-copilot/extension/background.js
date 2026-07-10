@@ -121,6 +121,44 @@ async function handleScrapedPosts(msg) {
     });
   if (!rows.length) return { ok: true, saved: 0 };
 
+  // The same post can arrive under two keys: Skool's hex id (page-data
+  // reader) or the URL slug (DOM reader, where post_key === post_name).
+  // Without reconciliation the post is stored twice and inflates every
+  // health stat. Rule: the hex-keyed row wins.
+  try {
+    var names = [];
+    rows.forEach(function (r) { if (r.post_name && names.indexOf(r.post_name) === -1) names.push(r.post_name); });
+    if (names.length) {
+      var existing = (await client
+        .from("scraped_posts")
+        .select("post_key,post_name")
+        .eq("community_id", community.id)
+        .in("post_name", names)) || [];
+      var hexNames = {};   // names already stored under a hex key
+      var slugKeys = {};   // slug-keyed rows already stored
+      existing.forEach(function (r) {
+        if (r.post_key === r.post_name) slugKeys[r.post_key] = true;
+        else if (r.post_name) hexNames[r.post_name] = true;
+      });
+      // 1. Incoming slug-keyed rows lose to an existing hex row.
+      rows = rows.filter(function (r) {
+        return !(r.post_key === r.post_name && hexNames[r.post_name]);
+      });
+      // 2. Incoming hex rows retire any stale slug-keyed duplicates.
+      var stale = [];
+      rows.forEach(function (r) {
+        if (r.post_name && r.post_key !== r.post_name && slugKeys[r.post_name]) {
+          stale.push(r.post_name);
+        }
+      });
+      if (stale.length) {
+        await client.from("scraped_posts").delete()
+          .eq("community_id", community.id).in("post_key", stale);
+      }
+    }
+  } catch (e) { /* best-effort cleanup — never block the sync itself */ }
+  if (!rows.length) return { ok: true, saved: 0 };
+
   await client
     .from("scraped_posts")
     .upsert(rows, { onConflict: "community_id,post_key" });

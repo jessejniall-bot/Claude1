@@ -147,6 +147,20 @@
       </div>
     </section>
 
+    <section class="card">
+      <h2>Tune-up</h2>
+      <p class="muted">If reading looks wrong (posts cut off, comments missing),
+        capture a snapshot of the current Skool page and send it to Claude so the
+        reader can be tuned to Skool's current layout. <strong>The "commentSample"
+        section includes real comment text</strong> — skim before sharing. For
+        comment problems, capture with a post (and its comments) open.</p>
+      <button id="sp-report" class="btn" type="button">🔬 Capture page report</button>
+      <p id="sp-report-error" class="error"></p>
+      <div id="sp-report-box" class="hidden">
+        <textarea id="sp-report-output" rows="12" readonly></textarea>
+        <button id="sp-report-copy" class="btn small" type="button">📋 Copy report</button>
+      </div>
+    </section>
   </main>
 
   <script src="../shared/config.js"></script>

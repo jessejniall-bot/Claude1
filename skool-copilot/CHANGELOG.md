@@ -5,6 +5,63 @@ judgment calls made where the spec left something open. This file exists so a
 future reader (human or AI) can see *why* a decision was made without having to
 reverse-engineer it from the diff.
 
+## v2.5 — Quality pass: truncated replies, cut-off text, comment reading
+
+Driven by a full expert audit after user reports of "punctuation cut off" in
+replies and the comment feed appearing unreadable. Every root cause below was
+reproduced in a test before fixing, and every fix is verified by the same test
+now passing.
+
+### Reply truncation ("punctuation cut off and such") — three causes fixed
+
+1. **Token-capped model output served as fragments.** With `maxTokens: 900`
+   for three drafts, the model's JSON answer could be cut mid-string; the old
+   parser then sliced between brackets and fell back to line-splitting,
+   serving drafts like `"Love this — what worked best for you when yo` —
+   stray quotes, trailing commas, cut mid-word. `parseReplyDrafts` is now
+   truncation-aware: it scans for *complete* JSON string literals (with
+   escape handling); the cut-off fragment never gets a closing quote, so it
+   is naturally excluded instead of served. The list fallback also strips
+   stray wrapping quotes/commas. Caps raised across the board (standalone
+   drafts 900→2000, comment replies 600→1200, thread summaries 500→800).
+2. **Gemini 2.5 Flash "thinking" starvation.** Flash silently spends the
+   same output budget on internal thinking before writing, truncating
+   answers at small caps. `thinkingConfig: { thinkingBudget: 0 }` is now set
+   for 2.5-flash models (Pro doesn't allow disabling, so it's flash-only).
+3. **The DOM reader dropped the post's last line.** `saveIdx - 1` assumed a
+   like-count line always sat between body and "Save"; when absent, the
+   post's final line vanished — the AI replied to a post whose ending it
+   never saw. Body extraction now *filters* chrome lines (counts, controls,
+   timestamps, author name) instead of doing position math, and preserves
+   paragraph breaks.
+
+### Comment feed reading — two reproduced failures fixed
+
+- **Multi-paragraph comments lost everything after the first line** (the old
+  reader took exactly one line after the "•" timestamp). Now: all lines
+  after the anchor to the action row, minus chrome — whole comments.
+- **CSS-drawn bullets made every body null** (`::before` content isn't in
+  `innerText`, so the "•" scan never matched). Now three anchor strategies:
+  bullet line, relative-time pattern ("4h", "2 days ago"), then the author
+  name line. Also: inline action rows ("Reply Like 3" as one line) are
+  recognized as a token-wise control row, and bodiless blocks no longer
+  dedupe-collapse per author.
+- **The "Tune-up" card (page report) is restored** — removed in v2.3 by
+  request, but it's the only tool that can calibrate extraction against
+  Skool's live markup, which the user's comment-feed issue needs. It now
+  additionally captures a `commentSample`: the innerText lines + tag
+  structure of the first two comment blocks (real comment text included —
+  the card warns to skim before sharing).
+
+### Small but visible
+
+- Post snippets no longer append "…" unconditionally — only when actually
+  truncated. (Every snippet previously *looked* cut off.)
+- Duplicate post rows reconciled: the same post could be stored under both
+  its Skool hex id (page-data reader) and its slug (DOM reader), inflating
+  cadence/pillar stats. The background now prefers the hex row, skips
+  incoming slug duplicates, and retires stale ones.
+
 ## v2.4 — Reverted Google sign-in; skip sign-in from the panel directly
 
 Real-world follow-up to v2.3: the user hit exactly the wall that section's

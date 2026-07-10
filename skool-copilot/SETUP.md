@@ -109,6 +109,13 @@ copy) — it never clicks or posts for you.
   **individual post** (its detail page carries the full tree). So browse into a
   few posts with the extension active; the **Inbox → Conversations** view fills
   in from there.
+- **Reading looks wrong (posts cut off, comments missing/empty)** — the side
+  panel's **Tune-up → 🔬 Capture page report** takes a snapshot of the current
+  page's structure so the reader can be re-tuned to Skool's current layout.
+  For comment problems, capture with a post (and its comments) open — the
+  report's `commentSample` section shows exactly how Skool is rendering
+  comment blocks right now. It includes real comment text, so skim before
+  sharing.
 - **"Post on Skool" says it needs to learn first** — posting a reply replays
   Skool's own request, which the extension learns from you: reply to any one
   comment *manually* on Skool once, then the button can post directly. Until

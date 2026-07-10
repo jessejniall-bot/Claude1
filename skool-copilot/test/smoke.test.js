@@ -277,13 +277,26 @@ console.log("standalone reply drafts");
   check("reply-to-comment prompt: keeps post as context", cp.includes("The post under discussion"));
 
   check("parseReplyDrafts: JSON array", JSON.stringify(
-    SC.parseReplyDrafts('["a","b","c","d"]', 3)) === JSON.stringify(["a", "b", "c"]));
-  check("parseReplyDrafts: fenced JSON", SC.parseReplyDrafts('```json\n["x","y"]\n```', 3).length === 2);
+    SC.parseReplyDrafts('["a1","b2","c3","d4"]', 3)) === JSON.stringify(["a1", "b2", "c3"]));
+  check("parseReplyDrafts: fenced JSON", SC.parseReplyDrafts('```json\n["x1","y2"]\n```', 3).length === 2);
   check("parseReplyDrafts: numbered fallback",
     SC.parseReplyDrafts("1. first\n2. second\n3. third", 3).length === 3);
   check("parseReplyDrafts: bulleted fallback",
     SC.parseReplyDrafts("- one\n- two", 5)[0] === "one");
   check("parseReplyDrafts: empty", SC.parseReplyDrafts("", 3).length === 0);
+
+  // Truncation-awareness: a token-capped model answer ends inside an
+  // unterminated string — complete drafts are served, the fragment is not.
+  var cut = SC.parseReplyDrafts(
+    '[\n  "Complete reply one.",\n  "Love this — what worked best for you when yo', 3);
+  check("parseReplyDrafts: truncated JSON keeps complete drafts only",
+    cut.length === 1 && cut[0] === "Complete reply one.", cut);
+  check("parseReplyDrafts: escaped quotes survive",
+    SC.parseReplyDrafts('["He said \\"go\\" now.", "B2"]', 3)[0] === 'He said "go" now.');
+  check("parseReplyDrafts: list fallback strips stray quotes/commas",
+    SC.parseReplyDrafts('1. "Quoted option.",\n2. plain option', 3)[0] === "Quoted option.");
+  check("parseReplyDrafts: lone bracket yields nothing",
+    SC.parseReplyDrafts("[", 3).length === 0);
 }
 
 /* ------------------------------ done ----------------------------- */
