@@ -104,6 +104,14 @@
       "https://generativelanguage.googleapis.com/v1beta/models/" +
       encodeURIComponent(opts.model) +
       ":generateContent";
+    var generationConfig = { maxOutputTokens: opts.maxTokens };
+    // Gemini 2.5 Flash silently spends the SAME output budget on internal
+    // "thinking" before writing, which truncates answers mid-sentence at
+    // small caps. Flash allows disabling it; Pro does not (min budget), so
+    // only apply to flash models.
+    if (/2\.5-flash/i.test(opts.model)) {
+      generationConfig.thinkingConfig = { thinkingBudget: 0 };
+    }
     var res = await fetch(url, {
       method: "POST",
       headers: {
@@ -113,7 +121,7 @@
       body: JSON.stringify({
         system_instruction: { parts: [{ text: opts.system }] },
         contents: [{ role: "user", parts: [{ text: opts.prompt }] }],
-        generationConfig: { maxOutputTokens: opts.maxTokens },
+        generationConfig: generationConfig,
       }),
     });
     if (!res.ok) throw new Error("Google: " + (await readError(res)));
@@ -389,23 +397,54 @@
   };
 
   // Tolerant parser: JSON array of strings, else a numbered/bulleted list.
+  // TRUNCATION-AWARE: when the model hits its token cap mid-JSON, the output
+  // ends inside an unterminated string. We scan for *complete* string
+  // literals (proper escape handling) instead of slicing between brackets —
+  // the cut-off fragment never gets a closing quote, so it is naturally
+  // excluded rather than served to the user with stray quotes/commas.
   SC.parseReplyDrafts = function (text, count) {
     if (!text) return [];
     var s = String(text).replace(/```(?:json)?/gi, "").trim();
-    var start = s.indexOf("["), end = s.lastIndexOf("]");
-    if (start !== -1 && end > start) {
-      try {
-        var arr = JSON.parse(s.slice(start, end + 1));
-        if (Array.isArray(arr)) {
-          var out = arr.map(function (x) { return String(x).trim(); }).filter(Boolean);
-          if (out.length) return count ? out.slice(0, count) : out;
+    var start = s.indexOf("[");
+
+    if (start !== -1) {
+      // Scan for complete double-quoted JSON strings after the bracket.
+      var found = [];
+      var i = start + 1;
+      while (i < s.length) {
+        if (s[i] === '"') {
+          var j = i + 1;
+          var closed = -1;
+          while (j < s.length) {
+            if (s[j] === "\\") { j += 2; continue; }
+            if (s[j] === '"') { closed = j; break; }
+            j++;
+          }
+          if (closed === -1) break; // unterminated — the truncated fragment
+          try {
+            var v = JSON.parse(s.slice(i, closed + 1));
+            if (String(v).trim()) found.push(String(v).trim());
+          } catch (e) { /* skip malformed literal */ }
+          i = closed + 1;
+        } else if (s[i] === "]") {
+          break; // array closed cleanly
+        } else {
+          i++;
         }
-      } catch (e) { /* fall through to list parse */ }
+      }
+      if (found.length) return count ? found.slice(0, count) : found;
     }
-    // Fallback: split a numbered/bulleted list.
+
+    // No JSON array at all: the model wrote prose or a numbered/bulleted
+    // list. Strip list markers plus any stray wrapping quotes / trailing
+    // commas so fragments never surface as punctuation garbage.
     var items = s.split(/\n/).map(function (l) {
-      return l.replace(/^\s*(?:\d+[.)]|[-*•])\s*/, "").trim();
-    }).filter(function (l) { return l.length > 1; });
+      return l
+        .replace(/^\s*(?:\d+[.)]|[-*•])\s*/, "")
+        .replace(/^["']+/, "")
+        .replace(/["',]+\s*$/, "")
+        .trim();
+    }).filter(function (l) { return l.length > 1 && !/^[\[\]{}",]+$/.test(l); });
     return count ? items.slice(0, count) : items;
   };
 

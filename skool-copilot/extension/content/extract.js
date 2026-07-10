@@ -34,6 +34,32 @@
     return m ? { group: m[1], slug: m[2], postId: m[3] } : null;
   }
 
+  // UI chrome lines that are never content: action controls, counts, and
+  // relative timestamps. Used to separate real post/comment text from the
+  // buttons and metadata that share the same innerText.
+  var CONTROL_LINE_RE = /^(Reply|Like|Liked|Comment|Comments?|Save|Saved|Share|Edit|Edited|Delete|Report|Follow|Pin|Pinned|See more|Show more|View \d+.*|(\d+\s+repl(?:y|ies)))$/i;
+  var COUNT_LINE_RE = /^\d+$/;
+  // "4h", "2d", "3 hr", "5 mins ago", optionally with a leading bullet.
+  var TIME_LINE_RE = /^(?:•\s*)?\d+\s*(?:s|m|h|d|w|y|mo|min|mins|hr|hrs|sec|secs|day|days|week|weeks|month|months|year|years)(?:\s+ago)?$/i;
+
+  // Action rows often render inline as ONE innerText line ("Reply Like 3").
+  // A line is a control row when every token is a control word / count /
+  // timestamp — a real sentence always has at least one token that isn't.
+  function isControlRow(line) {
+    if (CONTROL_LINE_RE.test(line)) return true;
+    var toks = line.split(/[\s·•|]+/).filter(Boolean);
+    if (!toks.length || toks.length > 6) return false;
+    return toks.every(function (t) {
+      return CONTROL_LINE_RE.test(t) || COUNT_LINE_RE.test(t) || TIME_LINE_RE.test(t);
+    });
+  }
+
+  function isChromeLine(line, authorName) {
+    if (isControlRow(line) || COUNT_LINE_RE.test(line) || TIME_LINE_RE.test(line)) return true;
+    if (authorName && line === authorName) return true;
+    return false;
+  }
+
   // Walk up from a permalink anchor to the smallest element that is a post
   // card: it contains an author link (/@handle) AND a "Save" control, and
   // isn't huge (so we don't grab the whole feed).
@@ -73,10 +99,15 @@
       seen[slug] = 1;
 
       var authorEl = card.querySelector('a[href^="/@"]');
+      var authorName = authorEl ? authorEl.innerText.trim() : null;
       var titleEl = card.querySelector('a[href="/' + group + "/" + slug + '"]');
       var title = titleEl ? titleEl.innerText.trim() : null;
 
-      // Body sits between the title line and the "Save" line.
+      // Body: everything between the title line and the "Save" line that
+      // isn't UI chrome (counts, timestamps, controls, the author's name).
+      // Filtering beats position math — the old `saveIdx - 1` assumed a
+      // like-count line always sat before "Save" and silently dropped the
+      // post's LAST body line whenever it didn't.
       var lines = card.innerText.split("\n")
         .map(function (s) { return s.trim(); })
         .filter(Boolean);
@@ -84,8 +115,9 @@
       var saveIdx = lines.indexOf("Save");
       var body = null;
       if (titleIdx >= 0 && saveIdx > titleIdx) {
-        // saveIdx-1 is the like count; body is everything between title and it.
-        body = lines.slice(titleIdx + 1, saveIdx - 1).join(" ").trim() || null;
+        body = lines.slice(titleIdx + 1, saveIdx)
+          .filter(function (l) { return !isChromeLine(l, authorName); })
+          .join("\n").trim() || null;
       }
 
       posts.push({
@@ -103,6 +135,12 @@
   // Comments on a post-DETAIL page (url already at /{group}/{slug}?p={id}).
   // Each comment block has a /@author link + a bare "Reply" control.
   // Returns up to `limit`: [{ author, authorName, body }].
+  //
+  // Body extraction is anchor-based with two fallbacks, because the old
+  // single strategy (find a literal "•" line, take exactly ONE line after
+  // it) failed two verified ways: multi-paragraph comments lost everything
+  // after their first line, and when Skool draws the bullet with CSS
+  // (::before isn't in innerText) every body came back null.
   SC.extract.extractComments = function (limit) {
     limit = limit || 8;
     var all = Array.prototype.slice.call(document.querySelectorAll("*"));
@@ -124,21 +162,41 @@
       if (!block) continue;
 
       var a = block.querySelector('a[href^="/@"]');
+      var authorName = a.innerText.trim() || null;
       var lines = block.innerText.split("\n")
         .map(function (s) { return s.trim(); })
         .filter(Boolean);
-      var tsIdx = -1;
+
+      // Anchor = the last metadata line before the body starts. Try, in
+      // order: a "•"/timestamp line, then the author-name line. (The old
+      // code only knew "•".)
+      var anchorIdx = -1;
       for (var k = 0; k < lines.length; k++) {
-        if (/•/.test(lines[k])) { tsIdx = k; break; } // "• 4h" timestamp line
+        if (/•/.test(lines[k]) || TIME_LINE_RE.test(lines[k])) { anchorIdx = k; break; }
       }
-      var body = tsIdx >= 0 ? (lines[tsIdx + 1] || null) : null;
+      if (anchorIdx === -1 && authorName) anchorIdx = lines.indexOf(authorName);
+
+      // Body = every line after the anchor until the control row, minus
+      // chrome — so multi-paragraph comments come through whole.
+      var body = null;
+      if (anchorIdx !== -1) {
+        var bodyLines = [];
+        for (var m = anchorIdx + 1; m < lines.length; m++) {
+          if (isControlRow(lines[m])) break; // hit the Reply/Like action row
+          if (isChromeLine(lines[m], authorName)) continue;
+          bodyLines.push(lines[m]);
+        }
+        body = bodyLines.join("\n").trim() || null;
+      }
 
       var author = a.getAttribute("href").replace(/\?.*/, "");
-      var key = author + "|" + body;
+      // Dedupe on author+body; bodiless blocks get a positional key so two
+      // unparsed comments by the same member don't collapse into one.
+      var key = author + "|" + (body || "@" + i);
       if (seen[key]) continue;
       seen[key] = 1;
 
-      comments.push({ author: author, authorName: a.innerText.trim() || null, body: body });
+      comments.push({ author: author, authorName: authorName, body: body });
       if (comments.length >= limit) break;
     }
     return comments;

@@ -848,6 +848,223 @@
   });
 
 
+  // Normalize CSS-module-style class names (e.g. "PostCard_root__aB3dQ")
+  // so a frequency count groups instances of the same component instead
+  // of being fragmented by their per-build hash suffix.
+  function normalizeClassName(cls) {
+    return cls
+      .replace(/__[a-zA-Z0-9_-]{4,10}$/, "__HASH")
+      .replace(/-[a-zA-Z0-9]{5,10}$/, "-HASH");
+  }
+
+  // Recursively describe an object as "path: type(len) = short preview"
+  // lines — reveals real field names and enough of each value to identify
+  // it, without dumping full content. Arrays are sampled at index 0 only
+  // (with their length noted) so one post's/comment's shape stands in for
+  // all of them.
+  var SUMMARY_MAX_DEPTH = 6;
+  var SUMMARY_MAX_BREADTH = 30;
+  var SUMMARY_BUDGET = 300;
+  function summarizeValue(v, depth, path, lines) {
+    if (lines.length >= SUMMARY_BUDGET) return;
+    if (v === null) { lines.push(path + ": null"); return; }
+    if (v === undefined) { lines.push(path + ": undefined"); return; }
+    var t = typeof v;
+    if (t === "string") {
+      var preview = v.length > 50 ? v.slice(0, 50) + "…" : v;
+      lines.push(path + ": string(" + v.length + ") = " + JSON.stringify(preview));
+      return;
+    }
+    if (t === "number" || t === "boolean") { lines.push(path + ": " + t + " = " + v); return; }
+    if (Array.isArray(v)) {
+      lines.push(path + ": array(len=" + v.length + ")");
+      if (v.length > 0 && depth < SUMMARY_MAX_DEPTH) {
+        summarizeValue(v[0], depth + 1, path + "[0]", lines);
+      }
+      return;
+    }
+    if (t === "object") {
+      var keys = Object.keys(v);
+      lines.push(path + ": object(keys=" + keys.length + ")");
+      if (depth >= SUMMARY_MAX_DEPTH) return;
+      keys.slice(0, SUMMARY_MAX_BREADTH).forEach(function (k) {
+        summarizeValue(v[k], depth + 1, path + "." + k, lines);
+      });
+      if (keys.length > SUMMARY_MAX_BREADTH) {
+        lines.push(path + ": …(+" + (keys.length - SUMMARY_MAX_BREADTH) + " more keys)");
+      }
+      return;
+    }
+    lines.push(path + ": " + t);
+  }
+
+  // Structural snapshot of the current page for calibrating the scraper
+  // against Skool's real, current markup — used when automatic detection
+  // finds nothing. Reports shapes and counts, not member content, except
+  // for capped raw samples of any React Server Component "flight" script
+  // (Next.js App Router's data format), which may contain post/comment
+  // text — the side panel warns about this before the user shares it.
+  function collectPageReport() {
+    var report = {
+      url: location.href,
+      slug: state.slug,
+      capturedAt: new Date().toISOString(),
+      readyState: document.readyState,
+    };
+
+    // 1. Classic Pages Router data island.
+    var ndEl = document.getElementById("__NEXT_DATA__");
+    if (ndEl) {
+      try {
+        var parsed = JSON.parse(ndEl.textContent);
+        report.nextData = {
+          present: true,
+          sizeChars: ndEl.textContent.length,
+          topLevelKeys: Object.keys(parsed),
+          pagePropsKeys: parsed.props && parsed.props.pageProps
+            ? Object.keys(parsed.props.pageProps) : [],
+        };
+      } catch (e) {
+        report.nextData = { present: true, parseError: String(e.message) };
+      }
+    } else {
+      report.nextData = { present: false };
+    }
+
+    // 1b. Targeted dump of whichever pageProps key looks like the feed —
+    // reveals the REAL field names for post/comment content, counts, and
+    // timestamps, which is what actually drives extraction. Field-name
+    // guesses go stale as Skool ships changes; this replaces guessing.
+    report.feedSample = null;
+    try {
+      var pp = ndEl && parsed && parsed.props && parsed.props.pageProps;
+      var candidateKeys = ["postTrees", "posts", "feed", "items", "results"];
+      var feedKey = pp && candidateKeys.filter(function (k) {
+        return Array.isArray(pp[k]) && pp[k].length > 0;
+      })[0];
+      if (feedKey) {
+        var lines = [];
+        summarizeValue(pp[feedKey][0], 0, "pageProps." + feedKey + "[0]", lines);
+        report.feedSample = { key: feedKey, length: pp[feedKey].length, lines: lines };
+      } else if (pp) {
+        report.feedSample = "No array field named " + candidateKeys.join("/") +
+          " found on pageProps with items in it.";
+      }
+    } catch (e) {
+      report.feedSample = "error: " + String((e && e.message) || e);
+    }
+
+    // 2. App Router "flight" data — inline scripts calling self.__next_f.push(...).
+    var flightScripts = Array.prototype.filter.call(
+      document.querySelectorAll("script"),
+      function (s) { return s.textContent && s.textContent.indexOf("__next_f.push") !== -1; }
+    );
+    report.nextFlight = {
+      scriptCount: flightScripts.length,
+      totalChars: flightScripts.reduce(function (sum, s) { return sum + s.textContent.length; }, 0),
+      samples: flightScripts.slice(0, 3).map(function (s) { return s.textContent.slice(0, 1500); }),
+    };
+
+    // 3. Other common client-state globals.
+    report.globals = [];
+    ["__APOLLO_STATE__", "__INITIAL_STATE__", "__PRELOADED_STATE__", "__RELAY_STORE__"]
+      .forEach(function (key) {
+        if (window[key] !== undefined) {
+          var keys = [];
+          try { keys = Object.keys(window[key] || {}).slice(0, 20); } catch (e) {}
+          report.globals.push({ name: key, topKeys: keys });
+        }
+      });
+
+    // 4. Other JSON data islands by tag, not just __NEXT_DATA__.
+    report.jsonScripts = Array.prototype.map.call(
+      document.querySelectorAll("script[type='application/json']"),
+      function (s) { return { id: s.id || "(no id)", length: s.textContent.length }; }
+    );
+
+    // 5. DOM census: broad selector hit-counts + most common component
+    // class names (normalized), to spot the real feed/post/comment markup.
+    var selectors = [
+      "article", "[class*='post' i]", "[class*='feed' i]", "[class*='comment' i]",
+      "[class*='reply' i]", "[class*='card' i]", "[class*='thread' i]",
+      "[data-testid]", "[role='article']",
+    ];
+    report.selectorCounts = {};
+    selectors.forEach(function (sel) {
+      try { report.selectorCounts[sel] = document.querySelectorAll(sel).length; } catch (e) {}
+    });
+
+    var classFreq = {};
+    Array.prototype.forEach.call(document.querySelectorAll("[class]"), function (el) {
+      var cn = el.className;
+      if (typeof cn !== "string" || !cn) return;
+      cn.split(/\s+/).forEach(function (c) {
+        var norm = normalizeClassName(c);
+        classFreq[norm] = (classFreq[norm] || 0) + 1;
+      });
+    });
+    report.topClasses = Object.keys(classFreq)
+      .sort(function (a, b) { return classFreq[b] - classFreq[a]; })
+      .slice(0, 40)
+      .map(function (c) { return c + " (" + classFreq[c] + ")"; });
+
+
+    // 6. Comment-block sample — the section that calibrates comment
+    // extraction. Finds the first two comment blocks (same walk-up the real
+    // extractor uses) and dumps their innerText LINES plus child tag
+    // structure. Includes real comment text, so the side panel warns to
+    // skim before sharing.
+    report.commentSample = [];
+    try {
+      var replyLeaves = Array.prototype.filter.call(
+        document.querySelectorAll("*"),
+        function (e) { return e.children.length === 0 && e.textContent.trim() === "Reply"; }
+      ).slice(0, 2);
+      replyLeaves.forEach(function (leaf) {
+        var el = leaf, block = null;
+        for (var w = 0; w < 6 && el; w++) {
+          el = el.parentElement;
+          if (el && el.querySelector('a[href^="/@"]')) { block = el; break; }
+        }
+        if (!block) return;
+        var tagTree = [];
+        (function walkTags(node, depth) {
+          if (depth > 4 || tagTree.length > 60) return;
+          tagTree.push("  ".repeat(depth) + node.tagName.toLowerCase() +
+            (node.children.length === 0 && node.textContent.trim()
+              ? ' "' + node.textContent.trim().slice(0, 40) + '"' : ""));
+          Array.prototype.forEach.call(node.children, function (ch) { walkTags(ch, depth + 1); });
+        })(block, 0);
+        report.commentSample.push({
+          innerTextLines: block.innerText.split("\n")
+            .map(function (s) { return s.trim(); }).filter(Boolean).slice(0, 25),
+          tagTree: tagTree,
+        });
+      });
+      if (!report.commentSample.length) {
+        report.commentSample = "No comment blocks found (no bare Reply controls on this page).";
+      }
+    } catch (e) {
+      report.commentSample = "error: " + String((e && e.message) || e);
+    }
+
+    return report;
+  }
+
+  chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+    if (!msg || msg.type !== "CAPTURE_PAGE_REPORT") return;
+    if (!/(^|\.)skool\.com$/.test(location.hostname)) {
+      sendResponse({ ok: false, error: "Not a Skool page." });
+      return;
+    }
+    try {
+      sendResponse({ ok: true, report: collectPageReport() });
+    } catch (e) {
+      sendResponse({ ok: false, error: String((e && e.message) || e) });
+    }
+  });
+
+
   // Re-evaluate on SPA navigations (Next.js router) and feed mutations.
   var lastHref = location.href;
   setInterval(function () {

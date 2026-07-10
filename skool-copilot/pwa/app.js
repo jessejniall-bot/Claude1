@@ -397,7 +397,7 @@
       apiKey: apiKey,
       model: settings.model,
       system: SC.COMMENT_REPLY_SYSTEM_PROMPT,
-      maxTokens: 600,
+      maxTokens: 1200,
       prompt: SC.buildCommentReplyPrompt({
         communityName: currentCommunity() ? currentCommunity().name : "",
         voice: voice,
@@ -523,7 +523,7 @@
       apiKey: apiKey,
       model: settings.model,
       system: SC.THREAD_SUMMARY_SYSTEM_PROMPT,
-      maxTokens: 500,
+      maxTokens: 800,
       prompt: SC.buildThreadSummaryPrompt({
         postText: g.post ? g.post.post_text : "",
         comments: flat,

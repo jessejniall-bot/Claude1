@@ -286,7 +286,7 @@
     var post = posts.find(function (p) { return p.post_key === item.post_key; });
     return SC.generateDraft({
       provider: settings.provider, apiKey: apiKey, model: settings.model,
-      system: SC.COMMENT_REPLY_SYSTEM_PROMPT, maxTokens: 600,
+      system: SC.COMMENT_REPLY_SYSTEM_PROMPT, maxTokens: 1200,
       prompt: SC.buildCommentReplyPrompt({
         communityName: current.name, voice: voice,
         postText: post ? post.post_text : "",
@@ -463,6 +463,40 @@
     setTimeout(function () { btn.textContent = original; }, 1400);
   }
 
+  /* ------------------------ page report capture --------------------- */
+
+  async function capturePageReport() {
+    $("sp-report-error").textContent = "";
+    var btn = $("sp-report");
+    btn.disabled = true;
+    btn.textContent = "Capturing…";
+    try {
+      var tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      var tab = tabs && tabs[0];
+      if (!tab || !tab.url || tab.url.indexOf("skool.com") === -1) {
+        throw new Error("Switch to your Skool community tab first, then try again.");
+      }
+      var res = await new Promise(function (resolve, reject) {
+        chrome.tabs.sendMessage(tab.id, { type: "CAPTURE_PAGE_REPORT" }, function (r) {
+          if (chrome.runtime.lastError) {
+            reject(new Error("Couldn't reach the page — reload your Skool tab once, then retry."));
+          } else if (!r || !r.ok) {
+            reject(new Error((r && r.error) || "Couldn't capture a report."));
+          } else {
+            resolve(r);
+          }
+        });
+      });
+      $("sp-report-output").value = JSON.stringify(res.report, null, 2);
+      $("sp-report-box").classList.remove("hidden");
+    } catch (e) {
+      $("sp-report-error").textContent = String((e && e.message) || e);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "🔬 Capture page report";
+    }
+  }
+
   /* ------------------ standalone reply drafter --------------------- */
   // Works with NO backend: reads the current Skool tab via the content
   // script's class-free extractor and drafts replies from the LOCAL voice
@@ -567,10 +601,11 @@
       div.className = "sugg";
       div._post = post;
       div._comments = comments;
-      var snippet = ((post.title ? post.title + " — " : "") + (post.body || "")).slice(0, 120);
+      var fullText = (post.title ? post.title + " — " : "") + (post.body || "");
+      var snippet = fullText.slice(0, 120) + (fullText.length > 120 ? "…" : "");
       div.innerHTML =
         '<div class="head"><span class="who">' + escapeHtml(post.author || "Post") + "</span></div>" +
-        '<div class="snippet">' + escapeHtml(snippet) + "…</div>" +
+        '<div class="snippet">' + escapeHtml(snippet) + "</div>" +
         '<div class="row"><button class="btn small primary" data-act="draft">✍️ Draft 3 replies</button></div>' +
         '<p class="muted sa-item-status"></p><div class="sa-drafts"></div>';
       host.appendChild(div);
@@ -665,7 +700,7 @@
     var voice = await SC.localVoice.load();
     var text = await SC.generateDraft({
       provider: settings.provider, apiKey: apiKey, model: settings.model,
-      system: SC.LOCAL_REPLY_SYSTEM_PROMPT, maxTokens: 900,
+      system: SC.LOCAL_REPLY_SYSTEM_PROMPT, maxTokens: 2000,
       prompt: SC.buildLocalReplyPrompt({
         post: post, comments: comments, replyTo: replyTo || null,
         voice: voice, count: 3,
@@ -781,6 +816,12 @@
   });
   $("sp-generate").addEventListener("click", generate);
   $("sp-inbox").addEventListener("click", onInboxClick);
+  $("sp-report").addEventListener("click", capturePageReport);
+  $("sp-report-copy").addEventListener("click", function () {
+    navigator.clipboard.writeText($("sp-report-output").value).then(function () {
+      flash($("sp-report-copy"), "✅ Copied");
+    });
+  });
   $("sp-copy").addEventListener("click", copyDraft);
   $("sp-save").addEventListener("click", saveDraft);
   $("sp-add-save").addEventListener("click", addCommunity);

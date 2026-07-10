@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Skool Community Copilot",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Scans your own Skool community for content health, threads member comments, drafts on-voice posts and replies, and can post replies from the live tab — all with your own AI key.",
   "permissions": ["storage", "alarms", "sidePanel", "tabs"],
   "host_permissions": [
