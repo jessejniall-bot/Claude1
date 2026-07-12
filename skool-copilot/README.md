@@ -210,6 +210,10 @@ Behind-the-Scenes (10%)
   streaks, silent posts, new voices, best day, latency, comment stats,
   score, improvements, digest), needs-response, threading, pillar templates,
   pillar-suggestion prompt + parser, draft prompts, Unicode styling.
+- `node test/sidepanel.smoke.js` — boots the **real side panel** in headless
+  Chromium (chrome.* + Supabase shimmed, solo-mode path) and fails on any page
+  error; guards the side-panel wiring that the PWA e2e doesn't cover. Same
+  Playwright/`PW_CHROMIUM` setup as e2e.
 - `node test/e2e.js` — drives the **real PWA** headlessly through
   configure → sign in → add community → dashboard → AI deep review →
   generate draft → **inbox (suggest reply) → thread expand + summarize**, with
