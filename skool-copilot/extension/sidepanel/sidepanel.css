@@ -204,3 +204,22 @@ textarea:focus, input:focus, select:focus { outline: 2px solid var(--accent); ou
 .steps { padding-left: 20px; margin: 8px 0 12px; }
 .steps li { margin-bottom: 6px; }
 #sp-solo-block h2 { font-size: 14px; margin: 0 0 6px; }
+
+/* pillar tracker */
+.pillar-line { padding: 7px 0; border-top: 1px solid var(--line); }
+.pillar-line:first-child { border-top: none; }
+.pl-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.pl-name { font-weight: 600; font-size: 12.5px; }
+.pl-meta { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.pl-track { height: 5px; background: var(--line); border-radius: 999px; margin-top: 5px; overflow: hidden; }
+.pl-fill { height: 100%; border-radius: 999px; background: var(--good); }
+.pillar-line.due .pl-fill { background: var(--warning); }
+.pillar-line.overdue .pl-fill, .pillar-line.never .pl-fill { background: var(--critical); }
+
+/* page pulse chips */
+.chip {
+  font-size: 10.5px; font-weight: 700; padding: 1px 8px; border-radius: 999px;
+  border: 1px solid var(--line); white-space: nowrap;
+}
+.chip.pillar { color: var(--accent); border-color: var(--accent); }
+.chip.none { color: var(--muted); }

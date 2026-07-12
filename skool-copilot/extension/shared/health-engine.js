@@ -301,6 +301,140 @@
     };
   };
 
+  /* -------------------- pillar coverage tracker --------------------- */
+  // The heart of pillar-first health tracking: per pillar, how recently and
+  // how much it's been fed, vs its target — plus a plain status the UI can
+  // color. "days since last post" catches droughts that percentage balance
+  // math hides (a pillar can be at target share while silent for 3 weeks).
+  SC.health.pillarCoverage = function (posts, pillars, opts) {
+    var windowDays = (opts && opts.windowDays) || 30;
+    var now = (opts && opts.now) || Date.now();
+    var cutoff = now - windowDays * DAY_MS;
+
+    var dated = datedPosts(posts);
+    var recent = dated.filter(function (x) { return x.t >= cutoff; });
+    var classified = recent.filter(function (x) { return x.post.pillar_guess; });
+    var totalClassified = classified.length;
+
+    return (pillars || []).map(function (p) {
+      var mine = classified.filter(function (x) { return x.post.pillar_guess === p.slug; });
+      var lastAny = null; // most recent post EVER for this pillar, not just window
+      dated.forEach(function (x) {
+        if (x.post.pillar_guess === p.slug && (lastAny === null || x.t > lastAny)) lastAny = x.t;
+      });
+      var actualPct = totalClassified ? +((mine.length / totalClassified) * 100).toFixed(1) : 0;
+      var target = Number(p.target_ratio) || 0;
+      var daysSince = lastAny === null ? null : Math.floor((now - lastAny) / DAY_MS);
+      // Expected gap from target share: at ~12 posts/month, a 25% pillar
+      // should land every ~10 days. Overdue = 1.5x that; capped sanely.
+      var expectedGapDays = target > 0 ? Math.min(45, Math.max(7, Math.round(windowDays / (12 * target / 100)))) : null;
+      var status;
+      if (target === 0) status = "none";
+      else if (daysSince === null) status = "never";
+      else if (expectedGapDays !== null && daysSince > expectedGapDays * 1.5) status = "overdue";
+      else if (expectedGapDays !== null && daysSince > expectedGapDays) status = "due";
+      else status = "ok";
+      return {
+        slug: p.slug, name: p.name, description: p.description,
+        targetPct: target, actualPct: actualPct,
+        postsInWindow: mine.length,
+        daysSinceLast: daysSince,
+        expectedGapDays: expectedGapDays,
+        status: status, // ok | due | overdue | never | none
+      };
+    });
+  };
+
+  /* --------------------- consistency streak ------------------------- */
+  // Consecutive weeks (ending this week) with at least one post.
+  SC.health.streak = function (posts, opts) {
+    var now = (opts && opts.now) || Date.now();
+    var dated = datedPosts(posts);
+    var weeks = 0;
+    for (var w = 0; w < 52; w++) {
+      var end = now - w * 7 * DAY_MS;
+      var start = end - 7 * DAY_MS;
+      var hit = dated.some(function (x) { return x.t >= start && x.t < end; });
+      if (hit) weeks++;
+      else if (w === 0) continue; // current week may just not have a post YET
+      else break;
+    }
+    return { weeks: weeks };
+  };
+
+  /* ------------------------ silent posts ---------------------------- */
+  // Share of recent posts that got zero comments — the clearest signal that
+  // content isn't inviting responses.
+  SC.health.silentPosts = function (posts, opts) {
+    var windowDays = (opts && opts.windowDays) || 30;
+    var now = (opts && opts.now) || Date.now();
+    var cutoff = now - windowDays * DAY_MS;
+    var recent = datedPosts(posts).filter(function (x) { return x.t >= cutoff; });
+    var silent = recent.filter(function (x) { return (Number(x.post.comments) || 0) === 0; });
+    return {
+      windowDays: windowDays,
+      total: recent.length,
+      silent: silent.length,
+      silentPct: recent.length ? +((silent.length / recent.length) * 100).toFixed(0) : null,
+      examples: silent.slice(-3).map(function (x) {
+        return (x.post.post_text || "").split("\n")[0].slice(0, 80);
+      }),
+    };
+  };
+
+  /* ------------------------- new voices ----------------------------- */
+  // Commenters whose FIRST-ever comment falls inside the window — are new
+  // members finding their voice, or is it the same circle every month?
+  SC.health.newVoices = function (comments, opts) {
+    var windowDays = (opts && opts.windowDays) || 30;
+    var now = (opts && opts.now) || Date.now();
+    var cutoff = now - windowDays * DAY_MS;
+    var firstSeen = {};
+    (comments || []).forEach(function (c) {
+      if (!c.author || c.is_owner) return;
+      var t = ts(c.commented_at);
+      if (t === null) return;
+      if (!(c.author in firstSeen) || t < firstSeen[c.author]) firstSeen[c.author] = t;
+    });
+    var authors = Object.keys(firstSeen);
+    var fresh = authors.filter(function (a) { return firstSeen[a] >= cutoff; });
+    var active = authors.filter(function (a) {
+      // commented at all inside the window
+      return (comments || []).some(function (c) {
+        var t = ts(c.commented_at);
+        return c.author === a && t !== null && t >= cutoff;
+      });
+    });
+    return {
+      windowDays: windowDays,
+      newCommenters: fresh.length,
+      activeCommenters: active.length,
+      names: fresh.slice(0, 5),
+    };
+  };
+
+  /* -------------------------- best day ------------------------------ */
+  // Which weekday's posts earn the most engagement, so the owner can aim
+  // their most important posts at it. Needs a few weeks of data to mean much.
+  var DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  SC.health.bestDay = function (posts) {
+    var byDay = {};
+    datedPosts(posts).forEach(function (x) {
+      var d = new Date(x.t).getDay();
+      if (!byDay[d]) byDay[d] = { posts: 0, total: 0 };
+      byDay[d].posts++;
+      byDay[d].total += engagement(x.post);
+    });
+    var best = null;
+    Object.keys(byDay).forEach(function (d) {
+      var avg = byDay[d].total / byDay[d].posts;
+      if (byDay[d].posts >= 2 && (!best || avg > best.avg)) {
+        best = { day: DAY_NAMES[d], posts: byDay[d].posts, avg: +avg.toFixed(1) };
+      }
+    });
+    return best; // null until there's enough data
+  };
+
   /* ----------------- needs-response inbox --------------------------- */
   // Turns the response-latency number into something actionable: the actual
   // member comments/questions that have sat past the response window with
@@ -533,6 +667,66 @@
           "). A shoutout or check-in post can pull them back before they churn.",
       });
     }
+
+    // Pillar droughts: balance percentages can look fine while a pillar has
+    // been silent for weeks — days-since catches it.
+    var coverage = SC.health.pillarCoverage(posts, pillars, opts);
+    var droughts = coverage.filter(function (c) {
+      return c.status === "overdue" && c.daysSinceLast !== null;
+    }).sort(function (a, b) { return b.daysSinceLast - a.daysSinceLast; });
+    if (droughts.length) {
+      out.push({
+        area: "Pillar drought",
+        level: droughts[0].daysSinceLast > 30 ? "serious" : "warning",
+        text: "\"" + droughts[0].name + "\" hasn't been posted in " +
+          droughts[0].daysSinceLast + " days" +
+          (droughts.length > 1 ? " (and " + (droughts.length - 1) + " other pillar(s) are overdue too)" : "") +
+          ". The generator will fill it — one post ends the drought.",
+      });
+    }
+    var neverFed = coverage.filter(function (c) { return c.status === "never"; });
+    if (neverFed.length && posts.length >= 8) {
+      out.push({
+        area: "Pillar drought",
+        level: "warning",
+        text: neverFed.map(function (c) { return "\"" + c.name + "\""; }).join(", ") +
+          " ha" + (neverFed.length === 1 ? "s" : "ve") + " never been posted. Either " +
+          "post one this week or lower the target to 0 so the balance math reflects reality.",
+      });
+    }
+
+    var silent = SC.health.silentPosts(posts, opts);
+    if (silent.silentPct !== null && silent.silentPct >= 40 && silent.total >= 5) {
+      out.push({
+        area: "Silent posts",
+        level: silent.silentPct >= 60 ? "serious" : "warning",
+        text: silent.silentPct + "% of the last " + silent.total + " posts got ZERO comments. " +
+          "Every silent post trains members to scroll past. End each post with one " +
+          "specific question a beginner could answer in one line.",
+      });
+    }
+
+    var voices = SC.health.newVoices(comments, opts);
+    if (voices.activeCommenters >= 4 && voices.newCommenters === 0) {
+      out.push({
+        area: "New voices",
+        level: "warning",
+        text: "No first-time commenters in " + voices.windowDays + " days — the same circle " +
+          "is carrying every conversation. Welcome-tag new members in a post, or run a " +
+          "\"introduce yourself\" thread to break lurkers in.",
+      });
+    }
+
+    var streak = SC.health.streak(posts, opts);
+    if (streak.weeks >= 4) {
+      out.push({
+        area: "Consistency",
+        level: "good",
+        text: streak.weeks + "-week posting streak. Consistency is the single biggest " +
+          "compounding factor — protect the streak.",
+      });
+    }
+
     if (!out.length) {
       out.push({
         area: "Overall",

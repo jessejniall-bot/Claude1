@@ -45,16 +45,13 @@
   <!-- Main -->
   <main id="sp-main" class="hidden">
 
-    <!-- Engage card — works with NO account/backend -->
+    <!-- Page pulse — works with NO account/backend -->
     <section class="card" id="sp-standalone">
-      <h2>Read &amp; reply</h2>
-      <ol class="how-to muted">
-        <li><strong>On the main feed</strong> → lists every post; draft replies to any.</li>
-        <li><strong>Open a post</strong> → reads its <strong>comment feed</strong>: copy it,
-          or get suggested answers to any single comment.</li>
-      </ol>
-      <p class="muted">Everything is in your voice and copy-only — nothing is ever
-        posted for you. No account needed.</p>
+      <h2>Page pulse</h2>
+      <p class="muted">Reads what's on your current Skool tab and grades it for
+        health: which pillar each visible post hits, which posts are sitting
+        silent, and (with a post open) its comment feed to copy. Read-only —
+        nothing is ever posted for you.</p>
       <div class="row">
         <button id="sp-sa-read" class="btn primary" type="button">📥 Read this page</button>
         <label class="inline-select">Comments
@@ -72,8 +69,8 @@
       </label>
       <p id="sp-sa-status" class="muted"></p>
       <p id="sp-sa-error" class="error"></p>
+      <div id="sp-sa-summary"></div>
       <div id="sp-sa-posts"></div>
-      <p class="muted" id="sp-sa-voice-note"></p>
     </section>
 
     <p id="sp-backend-note" class="muted hidden"></p>
@@ -114,11 +111,17 @@
       <ul id="sp-flags" class="flags"></ul>
     </section>
 
+    <section class="card needs-backend" id="sp-pillars-card">
+      <h2>Pillar tracker</h2>
+      <p class="muted">Per pillar: share of recent posts vs target, and how long
+        since it was last fed. Green = on track, amber = due, red = drought.</p>
+      <div id="sp-pillars"></div>
+    </section>
+
     <section class="card needs-backend" id="sp-inbox-card">
       <h2>Needs a response</h2>
-      <p class="muted">Member comments waiting past 24h with no reply from you.
-        Draft in your voice, then post straight to Skool from your open tab — or
-        copy it. Nothing posts on its own.</p>
+      <p class="muted">Member comments waiting past 24h with nothing back from
+        you — answering these is the cheapest engagement win available today.</p>
       <p id="sp-inbox-status" class="muted"></p>
       <div id="sp-inbox"></div>
     </section>
@@ -168,8 +171,8 @@
   <script src="../shared/key-vault.js"></script>
   <script src="../shared/ai-providers.js"></script>
   <script src="../shared/health-engine.js"></script>
+  <script src="../shared/pillar-classifier.js"></script>
   <script src="../shared/unicode-style.js"></script>
-  <script src="../shared/voice-local.js"></script>
   <script src="../shared/solo-sql.js"></script>
   <script src="sidepanel.js"></script>
 </body>

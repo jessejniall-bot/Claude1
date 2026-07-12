@@ -282,170 +282,89 @@
     "member replies. You never mention that you are an AI, never use hashtags, and " +
     "you follow the voice profile exactly.";
 
-  /* ------------------ single comment reply draft ------------------- */
-  // One-tap "suggest a reply" to a specific incoming comment. Reuses the
-  // voice profile — no second voice system. Returns plain reply text, no JSON.
+  /* ------------------ pillar suggestions (AI) ---------------------- */
+  // "What pillars fit MY community?" — one BYOK call that reads the
+  // community's name, the owner's description, and recent post titles, and
+  // proposes a tailored pillar set. Output is JSON; parsing is tolerant and
+  // truncation-aware (complete objects only).
 
-  SC.COMMENT_REPLY_SYSTEM_PROMPT =
-    "You are a Skool community owner replying to one member's comment. Write a " +
-    "single reply in the owner's voice: warm, specific to what the member " +
-    "actually said, short, and human. Address the member by first name when it " +
-    "is known. Never generic praise, never mention AI, no hashtags, no sign-off " +
-    "signature. Output only the reply text — no quotes, no preamble.";
+  SC.PILLAR_SUGGEST_SYSTEM_PROMPT =
+    "You design content-pillar systems for Skool community owners. Given what " +
+    "a community is about, propose 4-6 content pillars that would keep it " +
+    "healthy: clear names, one-sentence descriptions of what qualifies, and " +
+    "target percentages that sum to 100. Favor pillars that drive member " +
+    "replies and belonging, not just broadcasting. Respond with raw JSON only " +
+    "- an array of objects with exactly these keys: name, description, target " +
+    "(a number). No prose, no code fences.";
 
-  // buildCommentReplyPrompt({communityName, voice, postText, comment:{author,text},
-  //                          thread:[{author,text}]})
-  SC.buildCommentReplyPrompt = function (ctx) {
-    var voice = ctx.voice || {};
-    var comment = ctx.comment || {};
+  // buildPillarSuggestPrompt({communityName, about, recentTitles})
+  SC.buildPillarSuggestPrompt = function (ctx) {
     var lines = [];
-    lines.push("Community: " + (ctx.communityName || "my community"));
-    if (voice.tone_notes) lines.push("Owner's voice: " + voice.tone_notes);
-    if (voice.formatting_rules) lines.push("Formatting rules: " + voice.formatting_rules);
-    if (voice.banned_words && voice.banned_words.length) {
-      lines.push("Never use these words: " + voice.banned_words.join(", "));
+    lines.push("Community name: " + (ctx.communityName || "(unnamed)"));
+    if (ctx.about) {
+      lines.push("The owner describes it as: " + String(ctx.about).slice(0, 400));
     }
-    if (ctx.postText) {
+    if (ctx.recentTitles && ctx.recentTitles.length) {
       lines.push("");
-      lines.push("The post this conversation is under:");
-      lines.push(String(ctx.postText).replace(/\s+/g, " ").slice(0, 500));
-    }
-    if (ctx.thread && ctx.thread.length) {
-      lines.push("");
-      lines.push("Earlier in the thread (oldest first):");
-      ctx.thread.slice(-6).forEach(function (t) {
-        lines.push("- " + (t.author || "member") + ": " +
-          String(t.text || "").replace(/\s+/g, " ").slice(0, 200));
-      });
+      lines.push("Recent post titles (what actually gets posted):");
+      ctx.recentTitles.slice(0, 12).forEach(function (t) { lines.push("- " + t); });
     }
     lines.push("");
-    lines.push("Reply to this comment from " + (comment.author || "a member") + ":");
-    lines.push(String(comment.text || "").replace(/\s+/g, " ").slice(0, 600));
-    lines.push("");
-    lines.push("Write only the owner's reply. One to three sentences. If the member " +
-      "asked a question, answer it directly; if they shared something, respond to " +
-      "the specific thing they shared.");
+    lines.push("Propose 4-6 pillars as a JSON array of {\"name\", \"description\", " +
+      "\"target\"} objects. Targets are whole numbers summing to 100. Base them on " +
+      "what this specific community is about - not a generic list.");
     return lines.join("\n");
   };
 
-  /* --------------------- thread summarization ---------------------- */
-  // Collapse a long comment chain into a few lines so the owner can catch up
-  // without reading top to bottom. One AI call.
-
-  /* -------------- standalone reply drafts (few-shot voice) --------- */
-  // Backend-free: draft N reply options to a post/comment, learning the
-  // owner's voice from their own pasted sample replies (few-shot). Returns
-  // a JSON array of strings.
-
-  SC.LOCAL_REPLY_SYSTEM_PROMPT =
-    "You are drafting reply options for a Skool community owner, in THEIR voice. " +
-    "You are shown a few of their real past replies as the gold standard for tone, " +
-    "length, and phrasing — match them closely. Replies must be specific to the " +
-    "post, warm, human, and short. Never generic praise, never mention AI, no " +
-    "hashtags, no sign-off signature. Respond with raw JSON only — an array of " +
-    "strings, no prose, no code fences.";
-
-  // buildLocalReplyPrompt({post:{author,title,body}, comments:[{authorName,body}],
-  //                        replyTo:{authorName,body}|null, voice:{styleNote,samples},
-  //                        count})
-  // With replyTo set, drafts target that specific COMMENT (the post is context);
-  // otherwise they reply to the post itself.
-  SC.buildLocalReplyPrompt = function (ctx) {
-    var voice = ctx.voice || {};
-    var post = ctx.post || {};
-    var replyTo = ctx.replyTo || null;
-    var count = ctx.count || 3;
-    var lines = [];
-    if (voice.styleNote) { lines.push("The owner describes their voice as: " + voice.styleNote); lines.push(""); }
-    if (voice.samples && voice.samples.length) {
-      lines.push("Here are real replies the owner has written — copy this voice:");
-      voice.samples.slice(0, 10).forEach(function (s, i) {
-        lines.push((i + 1) + ". " + String(s).replace(/\s+/g, " ").trim());
-      });
-      lines.push("");
-    } else {
-      lines.push("(No sample replies provided — keep it warm, brief, and specific.)");
-      lines.push("");
-    }
-    lines.push((replyTo ? "The post under discussion" : "Draft replies to this post") +
-      (post.author ? " by " + post.author : "") + ":");
-    if (post.title) lines.push("Title: " + post.title);
-    if (post.body) lines.push(String(post.body).replace(/\s+/g, " ").slice(0, 900));
-    if (!post.title && !post.body) lines.push("(post text unavailable — reply to the discussion generally)");
-    if (ctx.comments && ctx.comments.length) {
-      lines.push("");
-      lines.push(replyTo ? "The comment thread so far:" : "Recent comments on it (for context):");
-      ctx.comments.slice(0, 10).forEach(function (c) {
-        lines.push("- " + (c.authorName || "member") + ": " +
-          String(c.body || "").replace(/\s+/g, " ").slice(0, 200));
-      });
-    }
-    if (replyTo) {
-      lines.push("");
-      lines.push("Draft replies TO THIS COMMENT from " + (replyTo.authorName || "a member") + ":");
-      lines.push(String(replyTo.body || "").replace(/\s+/g, " ").slice(0, 600));
-      lines.push("");
-      lines.push("Address " + (replyTo.authorName ? replyTo.authorName.split(" ")[0] : "them") +
-        " directly and respond to the specific thing they said. If they asked a " +
-        "question, answer it.");
-    }
-    lines.push("");
-    lines.push("Return exactly " + count + " distinct reply options as a JSON array of " +
-      "strings, e.g. [\"first reply\", \"second reply\"]. Vary the angle across them " +
-      "(one warm/short, one that asks a follow-up question, one more substantive).");
-    return lines.join("\n");
-  };
-
-  // Tolerant parser: JSON array of strings, else a numbered/bulleted list.
-  // TRUNCATION-AWARE: when the model hits its token cap mid-JSON, the output
-  // ends inside an unterminated string. We scan for *complete* string
-  // literals (proper escape handling) instead of slicing between brackets —
-  // the cut-off fragment never gets a closing quote, so it is naturally
-  // excluded rather than served to the user with stray quotes/commas.
-  SC.parseReplyDrafts = function (text, count) {
-    if (!text) return [];
-    var s = String(text).replace(/```(?:json)?/gi, "").trim();
-    var start = s.indexOf("[");
-
-    if (start !== -1) {
-      // Scan for complete double-quoted JSON strings after the bracket.
-      var found = [];
-      var i = start + 1;
-      while (i < s.length) {
-        if (s[i] === '"') {
-          var j = i + 1;
-          var closed = -1;
-          while (j < s.length) {
-            if (s[j] === "\\") { j += 2; continue; }
-            if (s[j] === '"') { closed = j; break; }
-            j++;
-          }
-          if (closed === -1) break; // unterminated — the truncated fragment
+  // Tolerant, truncation-aware parser for the pillar-suggestion JSON.
+  // Extracts complete {...} objects one by one, so a token-capped tail is
+  // dropped instead of breaking the whole parse. Normalizes targets to
+  // integers; if they do not sum to ~100, rescales proportionally.
+  SC.parsePillarSuggestions = function (text) {
+    if (!text) return null;
+    var s = String(text).replace(/```(?:json)?/gi, "");
+    var out = [];
+    var depth = 0, objStart = -1, inStr = false;
+    for (var i = 0; i < s.length; i++) {
+      var ch = s[i];
+      if (inStr) {
+        if (ch === "\\") { i++; continue; }
+        if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') { inStr = true; continue; }
+      if (ch === "{") { if (depth === 0) objStart = i; depth++; }
+      else if (ch === "}") {
+        depth--;
+        if (depth === 0 && objStart !== -1) {
           try {
-            var v = JSON.parse(s.slice(i, closed + 1));
-            if (String(v).trim()) found.push(String(v).trim());
-          } catch (e) { /* skip malformed literal */ }
-          i = closed + 1;
-        } else if (s[i] === "]") {
-          break; // array closed cleanly
-        } else {
-          i++;
+            var o = JSON.parse(s.slice(objStart, i + 1));
+            var name = String(o.name || "").trim();
+            var target = Math.round(Number(o.target ?? o.target_ratio ?? o.percent ?? 0));
+            if (name) {
+              out.push({
+                name: name.slice(0, 60),
+                description: String(o.description || "").trim().slice(0, 200),
+                target_ratio: isNaN(target) ? 0 : Math.max(0, Math.min(100, target)),
+              });
+            }
+          } catch (e) { /* skip malformed object */ }
+          objStart = -1;
         }
       }
-      if (found.length) return count ? found.slice(0, count) : found;
     }
-
-    // No JSON array at all: the model wrote prose or a numbered/bulleted
-    // list. Strip list markers plus any stray wrapping quotes / trailing
-    // commas so fragments never surface as punctuation garbage.
-    var items = s.split(/\n/).map(function (l) {
-      return l
-        .replace(/^\s*(?:\d+[.)]|[-*•])\s*/, "")
-        .replace(/^["']+/, "")
-        .replace(/["',]+\s*$/, "")
-        .trim();
-    }).filter(function (l) { return l.length > 1 && !/^[\[\]{}",]+$/.test(l); });
-    return count ? items.slice(0, count) : items;
+    if (!out.length) return null;
+    // Rescale targets to sum to 100 when they are close but not exact.
+    var sum = out.reduce(function (t, p) { return t + p.target_ratio; }, 0);
+    if (sum > 0 && sum !== 100) {
+      var acc = 0;
+      out.forEach(function (p, idx) {
+        if (idx === out.length - 1) { p.target_ratio = Math.max(0, 100 - acc); return; }
+        p.target_ratio = Math.round((p.target_ratio / sum) * 100);
+        acc += p.target_ratio;
+      });
+    }
+    return out.slice(0, 8);
   };
 
   SC.THREAD_SUMMARY_SYSTEM_PROMPT =

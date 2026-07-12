@@ -297,12 +297,14 @@
     );
   };
 
-  SC.demoReply = function (author, commentText) {
-    var name = (author || "").split(" ")[0] || "there";
-    return "Great question, " + name + " — yes, this works even under 50 members; " +
-      "if anything it's easier to keep the conversation tight when you're smaller. " +
-      "Want me to share the exact steps I used? (Sample reply — add your AI key in " +
-      "Settings for real ones.)";
+  SC.demoPillarSuggestion = function () {
+    return [
+      { name: "Teaching / How-To", description: "Actionable lessons members can apply this week.", target_ratio: 30 },
+      { name: "Member Wins", description: "Results and milestones — proof it works.", target_ratio: 20 },
+      { name: "Engagement Question", description: "Prompts that get members talking to each other.", target_ratio: 20 },
+      { name: "Accountability Challenge", description: "Weekly check-ins that keep people moving.", target_ratio: 15 },
+      { name: "Personal Story", description: "The human behind the method.", target_ratio: 15 },
+    ];
   };
 
   SC.demoThreadSummary = function (flat) {

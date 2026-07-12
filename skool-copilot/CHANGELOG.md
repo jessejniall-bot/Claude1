@@ -5,6 +5,75 @@ judgment calls made where the spec left something open. This file exists so a
 future reader (human or AI) can see *why* a decision was made without having to
 reverse-engineer it from the diff.
 
+## v3.0 — The health pivot: tracker-first, reply suggestions removed
+
+Direction change, requested explicitly: the product is no longer a reply
+assistant — it's a **community health tracker** centered on engagement and
+content pillars. "I'm no longer interested in it offering post reply
+suggestions. I'm more interested in it monitoring the health of the community
+and focusing more on engagement and hitting the pillars, also being able to
+customize pillars. Maybe even suggest certain pillars for certain types of
+communities."
+
+### Removed — all reply-suggestion machinery
+
+- Side panel: the reply drafter ("Draft 3 replies", per-comment "Suggest
+  answers") and the inbox's suggest/post-to-Skool actions.
+- PWA: inbox reply drafting, the reply queue, per-comment reply buttons in
+  threads.
+- Under the hood: `net-observer.js` (the MAIN-world request learner),
+  `reply-template.js` (learn/replay templating), `voice-local.js` (the
+  reply-voice few-shot store) and its Options section, the reply prompts in
+  `ai-providers.js`, the reply-queue handlers in the background worker, and
+  the MAIN-world content-script block in the manifest. The `reply_queue`
+  table stays in the schema (harmless, unused) so no migration is needed.
+- Kept deliberately: the **post generator** (it fills pillars — core to the
+  new focus), **thread summarization** (catching up on engagement is health
+  work, not reply drafting), and the **needs-response inbox** as a
+  list-with-open/copy (it *measures* engagement debt; it just no longer
+  writes replies for you).
+
+### Added — pillar-first health tracking
+
+- **Pillar tracker** (dashboard + side panel): per pillar, share of recent
+  posts vs target AND days since it was last fed, with a plain status —
+  ✅ on track / ⏳ due / 🔴 drought / ⚪ never posted. Catches the failure mode
+  percentage-balance math hides: a pillar can be "at target" while silent
+  for three weeks.
+- **New health variables** in the engine, all surfaced as dashboard tiles
+  and/or improvement suggestions: **silent posts** (% of recent posts with
+  zero comments), **new voices** (first-time commenters in the window —
+  freshness vs the same circle carrying every thread), **posting streak**
+  (consecutive weeks with a post), **best day to post** (weekday whose posts
+  earn the most engagement), plus **pillar droughts** and never-fed pillars
+  in the improvements list.
+- **Pillar templates by community type** (`shared/pillar-templates.js`):
+  curated starter sets for Coaching/Course, Fitness/Wellness,
+  Business/Entrepreneurship, Creative/Hobby, Tech/SaaS, and
+  Faith/Lifestyle/Support — every set's targets sum to 100, applied via
+  Settings → "Start from a template," fully editable after loading, and
+  nothing saves until "Save pillars."
+- **AI pillar suggestions** ("✨ Suggest for my community"): one BYOK call
+  reading the community name, your one-line description, and recent post
+  titles; returns a tailored 4–6 pillar set (tolerant, truncation-aware JSON
+  parsing; targets auto-rescaled to 100). Canned suggestion in demo mode.
+- **Generator pillar picker**: draft for a specific pillar on demand, not
+  just the auto-picked most-overdue one.
+- **Page pulse** (side panel, replaces the reply drafter): reads the current
+  Skool tab and grades it — pillar mix of the visible posts (with an
+  unclassified count), per-post pillar chips, and the open post's comment
+  feed with copy (feature kept from v2.2, now analysis-only).
+
+### Decisions
+
+- Template/suggestion loads reuse existing pillar ids when slugs match, so
+  saving updates-in-place instead of hitting unique-slug collisions, and
+  pillars removed from the editor are deleted on save — clean replace
+  semantics with one explicit Save.
+- The 5-part health score composition is unchanged (stability over churn);
+  the new variables feed tiles and improvement suggestions instead of
+  silently reshuffling everyone's score.
+
 ## v2.5 — Quality pass: truncated replies, cut-off text, comment reading
 
 Driven by a full expert audit after user reports of "punctuation cut off" in

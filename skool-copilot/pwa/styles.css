@@ -364,3 +364,14 @@ input:focus, textarea:focus, select:focus {
   .btn.small, .btn.tiny { min-height: 40px; }
   .inbox-actions .btn { flex: 1; }
 }
+
+/* pillar tracker */
+.pillar-line { padding: 8px 0; border-top: 1px solid var(--line); }
+.pillar-line:first-child { border-top: none; }
+.pl-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.pl-name { font-weight: 600; font-size: 13.5px; }
+.pl-meta { color: var(--muted); font-size: 12px; }
+.pl-track { height: 6px; background: var(--line); border-radius: 999px; margin-top: 6px; overflow: hidden; }
+.pl-fill { height: 100%; border-radius: 999px; background: var(--good); }
+.pillar-line.due .pl-fill { background: #fab219; }
+.pillar-line.overdue .pl-fill, .pillar-line.never .pl-fill { background: var(--critical); }

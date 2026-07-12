@@ -82,10 +82,11 @@ state:
 | 🔴 No admin access detected | You're on the allowlisted community but the page shows no admin markers — hover the pill to see which checks ran |
 | ⚪ Not in your allowlist | This community wasn't added to your account |
 
-Health dashboard + drafting live in the side panel and the web app. The side
-panel's **📖 Read & suggest** button reads the posts currently on your screen
-and suggests how to engage with each (like / quick comment / drafted reply to
-copy) — it never clicks or posts for you.
+The health score, pillar tracker, needs-response inbox, and post generator
+live in the side panel and the web app. The side panel's **📥 Read this page**
+(Page pulse) grades whatever's on your current Skool tab — the pillar mix of
+visible posts, and an open post's comment feed to copy. Read-only; it never
+clicks or posts for you.
 
 ---
 
@@ -95,9 +96,9 @@ copy) — it never clicks or posts for you.
   not configured / sign-in needed / exact error). Follow what it says.
 - **"Test backend" fails** — the message tells you which of the three inputs
   is wrong: unreachable URL, rejected anon key, or schema not installed.
-- **Don't want to sign in at all** — you don't have to. The **Read & reply**
-  features need no sign-in, ever (just an AI key in Settings). For the health
-  dashboard too, use the side panel's sign-in card: **📋 Copy setup script** →
+- **Don't want to sign in at all** — you don't have to. **Page pulse** needs
+  no sign-in, ever. For the health dashboard and pillar tracker too, use the
+  side panel's sign-in card: **📋 Copy setup script** →
   paste + run in Supabase → SQL Editor → **🔓 Enable — skip sign-in**. One
   minute, then no sign-in anywhere, permanently. (There's no Google sign-in
   option — it required a separate Google Cloud Console project + OAuth setup
@@ -116,10 +117,6 @@ copy) — it never clicks or posts for you.
   report's `commentSample` section shows exactly how Skool is rendering
   comment blocks right now. It includes real comment text, so skim before
   sharing.
-- **"Post on Skool" says it needs to learn first** — posting a reply replays
-  Skool's own request, which the extension learns from you: reply to any one
-  comment *manually* on Skool once, then the button can post directly. Until
-  then it copies your reply and opens the post so you can paste and send.
 - **"No admin access detected" on a community you DO admin** — Skool's
   markup changed and automatic detection missed it. Open the side panel,
   select the community, and tick **"Force-enable scraping here"**, then

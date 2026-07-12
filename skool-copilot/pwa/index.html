@@ -122,6 +122,13 @@
       </div>
 
       <div id="dash-stats" class="stat-row"></div>
+
+      <div class="card">
+        <h3>Pillar tracker</h3>
+        <p class="muted">Per pillar: share of recent posts vs target, and how long since
+          it was last fed. Green = on track, amber = due, red = drought.</p>
+        <div id="dash-pillar-tracker"></div>
+      </div>
       <div class="grid-2">
         <div class="card">
           <h3>Engagement per post — weekly</h3>
@@ -161,6 +168,11 @@
             placeholder="A member comment, a health flag, or a note — or leave empty"></textarea>
         </label>
         <div class="row gen-options">
+          <label class="inline-field">Pillar
+            <select id="gen-pillar">
+              <option value="auto" selected>Auto (most overdue)</option>
+            </select>
+          </label>
           <label class="inline-field">Length
             <select id="gen-length">
               <option value="500" selected>Short (≤500 chars)</option>
@@ -202,9 +214,9 @@
       <div class="card">
         <h3>Needs a response</h3>
         <p class="muted">Member questions and comments that have waited past your
-          response window with nothing back from you yet. Draft a reply in your
-          voice, then queue it for the extension to post — or copy it and open
-          Skool. Nothing is ever posted without you.</p>
+          response window with nothing back from you yet \u2014 answering these is
+          the cheapest engagement win available. Open each on Skool and reply
+          there.</p>
         <div class="row" style="align-items:center;gap:10px;flex-wrap:wrap">
           <label class="inline-field">Waited over
             <select id="inbox-threshold">
@@ -278,6 +290,16 @@
 
       <div class="card">
         <h3>Pillars</h3>
+        <div class="row" style="align-items:flex-end;flex-wrap:wrap">
+          <label class="inline-field" style="flex:1;min-width:220px">Start from a template
+            <select id="pillar-template"></select>
+          </label>
+          <button id="pillar-template-apply" class="btn" type="button">Load template</button>
+          <button id="pillar-suggest" class="btn" type="button">\u2728 Suggest for my community</button>
+        </div>
+        <p id="pillar-template-blurb" class="muted"></p>
+        <p class="muted">Loading a template or suggestion fills the editor below \u2014 nothing
+          is saved until you click <strong>Save pillars</strong>.</p>
         <div id="pillars-editor"></div>
         <div class="row">
           <button id="pillar-add" class="btn" type="button">+ Add pillar</button>
@@ -327,6 +349,7 @@
   <script src="../extension/shared/health-engine.js"></script>
   <script src="../extension/shared/unicode-style.js"></script>
   <script src="../extension/shared/default-pillars.js"></script>
+  <script src="../extension/shared/pillar-templates.js"></script>
   <script src="../extension/shared/demo-data.js"></script>
   <script src="charts.js"></script>
   <script src="app.js"></script>
