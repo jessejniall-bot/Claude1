@@ -420,6 +420,12 @@
     setTimeout(function () { btn.textContent = original; }, 1400);
   }
 
+  function escapeHtml(s) {
+    var div = document.createElement("div");
+    div.textContent = s == null ? "" : String(s);
+    return div.innerHTML;
+  }
+
   /* ------------------------ page report capture --------------------- */
 
   async function capturePageReport() {
