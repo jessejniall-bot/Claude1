@@ -11,11 +11,10 @@
 require("../extension/shared/config.js");
 require("../extension/shared/default-pillars.js");
 require("../extension/shared/pillar-classifier.js");
+require("../extension/shared/pillar-templates.js");
 require("../extension/shared/health-engine.js");
 require("../extension/shared/ai-providers.js");
 require("../extension/shared/unicode-style.js");
-require("../extension/shared/reply-template.js");
-require("../extension/shared/voice-local.js");
 
 const SC = globalThis.SC;
 const DAY = 86400000;
@@ -194,46 +193,9 @@ console.log("threading");
   check("threads.byPost: attaches post", groups[0].post && groups[0].post.post_key === "P1");
 }
 
-/* --------------------- v2: reply templating ---------------------- */
-console.log("reply templating");
+/* ----------------- thread summary prompt (kept) ------------------ */
+console.log("thread summary prompt");
 {
-  const RT = SC.replyTemplate;
-  const req = {
-    method: "POST", url: "https://api.skool.com/v1/comments", contentType: "application/json",
-    body: { postId: "abcd1234efgh5678", parentId: "1111222233334444", content: "Yes, it works!" },
-  };
-  const a = RT.recognize(req.method, req.url, req.body);
-  check("recognize: strong for comment POST", a && a.confidence === "strong", a);
-  check("recognize: finds parent", a && a.parentIdPath && a.parentIdPath[0] === "parentId");
-  const tpl = RT.makeTemplate(req, a);
-  check("template: redacts text", tpl.bodyTemplate.indexOf("Yes, it works!") === -1);
-  check("template: redacts ids", tpl.bodyTemplate.indexOf("abcd1234efgh5678") === -1);
-  const filled = RT.fill(tpl, { text: 'He said "hi"\nok', postId: "PP", parentId: "CC" });
-  const parsedBody = JSON.parse(filled.body);
-  check("fill: text round-trips with escaping", parsedBody.content === 'He said "hi"\nok');
-  check("fill: ids substituted", parsedBody.postId === "PP" && parsedBody.parentId === "CC");
-  check("recognize: rejects upvote", RT.recognize("POST", "https://api.skool.com/v1/upvote", { postId: "abcd1234efgh5678" }) === null);
-  check("recognize: rejects GET", RT.recognize("GET", "https://api.skool.com/v1/comments", { content: "a b c", postId: "abcd1234efgh5678" }) === null);
-  const tpl2 = RT.makeTemplate(
-    { method: "POST", url: "https://api.skool.com/posts/abcd1234efgh5678/comments", body: { comment: "hi there", post: "abcd1234efgh5678" } },
-    RT.recognize("POST", "https://api.skool.com/posts/abcd1234efgh5678/comments", { comment: "hi there", post: "abcd1234efgh5678" })
-  );
-  check("template: templates id in URL path", tpl2.url.indexOf("{{POST_ID}}") !== -1, tpl2.url);
-  check("fill: requires postId when template needs it", RT.fill(tpl2, { text: "x" }) === null);
-}
-
-/* ----------------- v2: comment reply + summary prompts ----------- */
-console.log("reply + summary prompts");
-{
-  const rp = SC.buildCommentReplyPrompt({
-    communityName: "T", voice: { tone_notes: "warm", banned_words: ["synergy"] },
-    postText: "How I onboard members", comment: { author: "Ben", text: "Does this scale?" },
-    thread: [{ author: "Cara", text: "same question" }],
-  });
-  check("reply prompt: includes comment", rp.includes("Does this scale?"));
-  check("reply prompt: includes author", rp.includes("Ben"));
-  check("reply prompt: includes voice", rp.includes("warm") && rp.includes("synergy"));
-  check("reply prompt: includes thread context", rp.includes("same question"));
   const sp = SC.buildThreadSummaryPrompt({
     postText: "Post body",
     comments: [{ author: "Ben", text: "q1", depth: 0 }, { author: "You", text: "a1", depth: 1 }],
@@ -242,61 +204,95 @@ console.log("reply + summary prompts");
   check("summary prompt: indents replies", sp.includes("  - You"));
 }
 
-/* ------------- v2.1: standalone reply drafts (local voice) ------- */
-console.log("standalone reply drafts");
+/* ---------------- v3: pillar coverage + new metrics --------------- */
+console.log("pillar coverage + new metrics");
 {
-  // sample parsing: blank-line separated blocks stay whole
-  const blocks = SC.localVoice.parseSamples("Reply one line A\nline B\n\nReply two");
-  check("parseSamples: blank-line blocks", blocks.length === 2 && blocks[0].includes("line B"), blocks);
-  const singles = SC.localVoice.parseSamples("r1\nr2\nr3");
-  check("parseSamples: single lines when no blanks", singles.length === 3);
-  check("parseSamples: empty is []", SC.localVoice.parseSamples("   ").length === 0);
-
-  const lp = SC.buildLocalReplyPrompt({
-    post: { author: "Ben", title: "How I onboard", body: "steps here" },
-    comments: [{ authorName: "Cara", body: "love this" }],
-    voice: { styleNote: "warm, short", samples: ["Congrats! How long did that take?", "Love it — try X next."] },
-    count: 3,
+  const T = Date.now();
+  const mk = (slug, daysAgo, comments) => ({
+    post_text: "p", pillar_guess: slug, likes: 1, comments: comments == null ? 2 : comments,
+    posted_at: new Date(T - daysAgo * DAY).toISOString(), author: "You",
   });
-  check("local reply prompt: includes samples", lp.includes("Congrats! How long"));
-  check("local reply prompt: includes style note", lp.includes("warm, short"));
-  check("local reply prompt: includes post", lp.includes("How I onboard"));
-  check("local reply prompt: includes comment context", lp.includes("Cara"));
-  check("local reply prompt: asks for N JSON", lp.includes("exactly 3") && lp.includes("JSON array"));
+  const pillarsSet = [
+    { slug: "teaching", name: "Teaching", target_ratio: 40 },
+    { slug: "win", name: "Wins", target_ratio: 40 },
+    { slug: "story", name: "Story", target_ratio: 20 },
+  ];
+  // teaching fed recently+often; win last fed 40d ago; story never.
+  const cposts = [mk("teaching", 1), mk("teaching", 5), mk("teaching", 9),
+    mk("win", 40), mk("teaching", 12)];
+  const cov = SC.health.pillarCoverage(cposts, pillarsSet, { now: T });
+  const by = Object.fromEntries(cov.map(c => [c.slug, c]));
+  check("coverage: fed pillar on track-ish", by.teaching.status === "ok" || by.teaching.status === "due", by.teaching);
+  check("coverage: 40d-old pillar is overdue", by.win.status === "overdue", by.win);
+  check("coverage: unfed pillar is never", by.story.status === "never");
+  check("coverage: daysSince computed", by.win.daysSinceLast === 40);
+  check("coverage: actualPct sums to 100 over classified",
+    Math.round(cov.reduce((s, c) => s + c.actualPct, 0)) === 100);
 
-  // replyTo targets a specific comment (the comment feed feature)
-  const cp = SC.buildLocalReplyPrompt({
-    post: { author: "Ben", title: "How I onboard", body: "steps" },
-    comments: [{ authorName: "Cara", body: "earlier note" }],
-    replyTo: { authorName: "Dana Ray", body: "Does this scale past 500 members?" },
-    voice: { samples: ["Love it!"] }, count: 3,
+  const sil = SC.health.silentPosts(
+    [mk("teaching", 2, 0), mk("win", 3, 0), mk("story", 4, 5), mk("teaching", 5, 1)],
+    { now: T });
+  check("silentPosts: 50% silent", sil.silentPct === 50 && sil.silent === 2, sil);
+
+  const nv = SC.health.newVoices([
+    { author: "Old Timer", comment_text: "x", commented_at: new Date(T - 90 * DAY).toISOString() },
+    { author: "Old Timer", comment_text: "y", commented_at: new Date(T - 2 * DAY).toISOString() },
+    { author: "Fresh Face", comment_text: "hi", commented_at: new Date(T - 3 * DAY).toISOString() },
+    { author: "Owner", is_owner: true, comment_text: "o", commented_at: new Date(T - 1 * DAY).toISOString() },
+  ], { now: T });
+  check("newVoices: fresh counted, veteran + owner not", nv.newCommenters === 1 && nv.names[0] === "Fresh Face", nv);
+
+  const bd = SC.health.bestDay([
+    mk("teaching", 7, 9), mk("teaching", 14, 9), // same weekday, high engagement
+    mk("win", 6, 0), mk("win", 13, 0),
+  ]);
+  check("bestDay: picks the high-engagement weekday", bd && bd.avg > 0, bd);
+
+  const st = SC.health.streak([mk("teaching", 2), mk("teaching", 9), mk("teaching", 16)], { now: T });
+  check("streak: three consecutive weeks", st.weeks === 3, st);
+  check("streak: empty is 0", SC.health.streak([], { now: T }).weeks === 0);
+}
+
+/* ---------------------- v3: pillar templates ---------------------- */
+console.log("pillar templates");
+{
+  check("templates: several exist", (SC.PILLAR_TEMPLATES || []).length >= 5);
+  let allOk = true, sumOk = true;
+  SC.PILLAR_TEMPLATES.forEach(t => {
+    if (!t.id || !t.label || !t.blurb || !Array.isArray(t.pillars) || t.pillars.length < 4) allOk = false;
+    const sum = t.pillars.reduce((s, p) => s + p.target_ratio, 0);
+    if (sum !== 100) sumOk = false;
+    t.pillars.forEach(p => { if (!p.slug || !p.name || !p.description) allOk = false; });
   });
-  check("reply-to-comment prompt: targets the comment", cp.includes("TO THIS COMMENT from Dana Ray"));
-  check("reply-to-comment prompt: includes comment text", cp.includes("Does this scale past 500"));
-  check("reply-to-comment prompt: addresses first name", cp.includes("Address Dana"));
-  check("reply-to-comment prompt: keeps post as context", cp.includes("The post under discussion"));
+  check("templates: complete shapes", allOk);
+  check("templates: targets sum to 100 in every set", sumOk);
+  check("templates: lookup by id", SC.pillarTemplateById("coaching").pillars.length >= 4);
+  check("templates: unknown id is null", SC.pillarTemplateById("nope") === null);
+}
 
-  check("parseReplyDrafts: JSON array", JSON.stringify(
-    SC.parseReplyDrafts('["a1","b2","c3","d4"]', 3)) === JSON.stringify(["a1", "b2", "c3"]));
-  check("parseReplyDrafts: fenced JSON", SC.parseReplyDrafts('```json\n["x1","y2"]\n```', 3).length === 2);
-  check("parseReplyDrafts: numbered fallback",
-    SC.parseReplyDrafts("1. first\n2. second\n3. third", 3).length === 3);
-  check("parseReplyDrafts: bulleted fallback",
-    SC.parseReplyDrafts("- one\n- two", 5)[0] === "one");
-  check("parseReplyDrafts: empty", SC.parseReplyDrafts("", 3).length === 0);
+/* ------------------- v3: pillar suggestions (AI) ------------------ */
+console.log("pillar suggestions");
+{
+  const pp = SC.buildPillarSuggestPrompt({
+    communityName: "Maker Mastermind", about: "indie makers shipping products",
+    recentTitles: ["How I onboard", "Win: first sale"],
+  });
+  check("suggest prompt: includes name + about", pp.includes("Maker Mastermind") && pp.includes("indie makers"));
+  check("suggest prompt: includes titles", pp.includes("How I onboard"));
+  check("suggest prompt: demands JSON", pp.includes("JSON array"));
 
-  // Truncation-awareness: a token-capped model answer ends inside an
-  // unterminated string — complete drafts are served, the fragment is not.
-  var cut = SC.parseReplyDrafts(
-    '[\n  "Complete reply one.",\n  "Love this — what worked best for you when yo', 3);
-  check("parseReplyDrafts: truncated JSON keeps complete drafts only",
-    cut.length === 1 && cut[0] === "Complete reply one.", cut);
-  check("parseReplyDrafts: escaped quotes survive",
-    SC.parseReplyDrafts('["He said \\"go\\" now.", "B2"]', 3)[0] === 'He said "go" now.');
-  check("parseReplyDrafts: list fallback strips stray quotes/commas",
-    SC.parseReplyDrafts('1. "Quoted option.",\n2. plain option', 3)[0] === "Quoted option.");
-  check("parseReplyDrafts: lone bracket yields nothing",
-    SC.parseReplyDrafts("[", 3).length === 0);
+  const parsed = SC.parsePillarSuggestions(
+    '```json\n[{"name":"Teach","description":"d","target":40},' +
+    '{"name":"Wins","description":"d","target":35},{"name":"Ask","description":"d","target":25}]\n```');
+  check("suggest parser: parses fenced JSON", parsed && parsed.length === 3);
+  check("suggest parser: sums stay 100", parsed.reduce((s, p) => s + p.target_ratio, 0) === 100);
+
+  const skewed = SC.parsePillarSuggestions('[{"name":"A","target":30},{"name":"B","target":30}]');
+  check("suggest parser: rescales to 100", skewed.reduce((s, p) => s + p.target_ratio, 0) === 100, skewed);
+
+  const cut = SC.parsePillarSuggestions('[{"name":"Full","description":"ok","target":50},{"name":"Trunca');
+  check("suggest parser: truncated object dropped", cut && cut.length === 1 && cut[0].name === "Full", cut);
+  check("suggest parser: garbage is null", SC.parsePillarSuggestions("no json") === null);
 }
 
 /* ------------------------------ done ----------------------------- */

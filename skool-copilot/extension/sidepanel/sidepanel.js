@@ -19,9 +19,9 @@
   /* ----------------------------- boot ------------------------------ */
 
   async function boot() {
-    // The standalone reply drafter needs no account, so the panel is never
-    // blocked on a backend: show the shell + drafter first, then layer the
-    // account features on top only if a backend is configured + signed in.
+    // Page pulse needs no account, so the panel is never blocked on a
+    // backend: show the shell + pulse first, then layer the health
+    // tracking on top only if a backend is configured + signed in.
     $("sp-auth").classList.add("hidden");
     $("sp-main").classList.remove("hidden");
     initStandalone();
@@ -37,25 +37,25 @@
         // sign-in for good, right here, or sign in with email.
         backendMode(false);
         $("sp-backend-note").innerHTML =
-          "Signed out. The reply drafter below works as-is; " +
+          "Signed out. Page pulse below works as-is; " +
           "<button id=\"sp-connect\" class=\"link\" type=\"button\">skip sign-in for good</button> " +
-          "to also track community health with zero sign-in.";
+          "to unlock full health tracking with zero sign-in.";
         wireBackendNote();
       } else {
         // No backend configured at all yet — that's the real first step.
         backendMode(false);
         $("sp-backend-note").innerHTML =
-          "No account connected — the reply drafter below works as-is. Add your " +
+          "No backend connected — Page pulse below works as-is. Add your " +
           "Supabase project in " +
           "<button id=\"sp-open-settings\" class=\"link\" type=\"button\">Settings</button> " +
-          "(free, a couple minutes) to also track community health, or just set your AI key there.";
+          "(free, a couple minutes) to unlock the health score, pillar tracker, and inbox.";
         wireBackendNote();
       }
     } catch (e) {
       backendMode(false);
       $("sp-backend-note").textContent =
-        "Account features are off (" + String((e && e.message) || e) +
-        "). The reply drafter below still works.";
+        "Health tracking is off (" + String((e && e.message) || e) +
+        "). Page pulse below still works.";
     }
   }
 
@@ -227,6 +227,7 @@
         "% actual vs " + overdue.targetPct + "% target)"
       : "No pillar data yet — browse your community with the extension active to collect posts.";
 
+    renderPillarTracker();
     renderInbox();
   }
 
@@ -238,6 +239,15 @@
     return Object.keys(names);
   }
 
+  function communityBase() {
+    var slug = current && (current.slug || SC.skoolSlug(current.skool_url));
+    return "https://www.skool.com/" + (slug || "");
+  }
+  function postDeepLink(item) {
+    var post = posts.find(function (p) { return p.post_key === item.post_key; });
+    return post && post.post_name ? communityBase() + "/" + post.post_name : communityBase();
+  }
+
   function renderInbox() {
     var host = $("sp-inbox");
     var status = $("sp-inbox-status");
@@ -247,7 +257,7 @@
     });
     if (!items.length) {
       status.textContent = comments.length
-        ? "✅ Nothing waiting — you're caught up."
+        ? "\u2705 Nothing waiting \u2014 you\u0027re caught up."
         : "No comments scraped yet. Open individual posts on Skool to collect threads.";
       host.innerHTML = "";
       return;
@@ -264,108 +274,55 @@
         '<div class="head"><span class="who">' + escapeHtml(item.author || "Member") +
         '</span><span class="counts">waiting ' + wait + "</span></div>" +
         '<div class="snippet">' + escapeHtml((item.text || "").slice(0, 140)) + "</div>" +
-        '<div class="row"><button class="btn small" data-act="suggest">✨ Suggest</button></div>' +
-        '<div class="reply-wrap hidden">' +
-        '<textarea class="reply-text" rows="3" autocapitalize="sentences" autocorrect="off"></textarea>' +
         '<div class="row">' +
-        '<button class="btn small primary" data-act="post">📤 Post on Skool</button>' +
-        '<button class="btn small" data-act="copy">📋 Copy</button>' +
-        "</div><p class='muted inbox-item-status'></p></div>";
+        '<button class="btn small primary" data-act="open">\u2197 Open on Skool</button>' +
+        '<button class="btn small" data-act="copy">\ud83d\udccb Copy</button>' +
+        "</div>";
       host.appendChild(div);
     });
-  }
-
-  async function draftReplyFor(item) {
-    var settings = (await SC.storage.get("sc_ai_settings")) || {};
-    if (!settings.provider) throw new Error("No AI provider configured. Open Settings.");
-    var apiKey = await SC.vault.loadApiKey(settings.provider);
-    if (!apiKey) throw new Error("No API key stored for " + settings.provider + ". Open Settings.");
-    var voiceRows = await client.from("voice_profiles").select("*")
-      .eq("community_id", current.id).limit(1);
-    var voice = (voiceRows && voiceRows[0]) || {};
-    var post = posts.find(function (p) { return p.post_key === item.post_key; });
-    return SC.generateDraft({
-      provider: settings.provider, apiKey: apiKey, model: settings.model,
-      system: SC.COMMENT_REPLY_SYSTEM_PROMPT, maxTokens: 1200,
-      prompt: SC.buildCommentReplyPrompt({
-        communityName: current.name, voice: voice,
-        postText: post ? post.post_text : "",
-        comment: { author: item.author, text: item.text },
-      }),
-    });
-  }
-
-  function postReplyOnPage(item, text) {
-    return new Promise(function (resolve) {
-      chrome.tabs.query({ active: true, lastFocusedWindow: true }, function (tabs) {
-        var tab = tabs && tabs[0];
-        if (!tab || !tab.url || tab.url.indexOf("skool.com") === -1) {
-          resolve({ ok: false, code: "no_tab" }); return;
-        }
-        chrome.tabs.sendMessage(tab.id, {
-          type: "SUBMIT_ON_PAGE_REPLY", text: text,
-          postKey: item.post_key, parentCommentKey: item.comment_key || "",
-        }, function (res) {
-          if (chrome.runtime.lastError) { resolve({ ok: false, code: "no_tab" }); return; }
-          resolve(res || { ok: false, error: "No response from page." });
-        });
-      });
-    });
-  }
-
-  function communityBase() {
-    var slug = current && (current.slug || SC.skoolSlug(current.skool_url));
-    return "https://www.skool.com/" + (slug || "");
-  }
-  function postDeepLink(item) {
-    var post = posts.find(function (p) { return p.post_key === item.post_key; });
-    return post && post.post_name ? communityBase() + "/" + post.post_name : communityBase();
   }
 
   async function onInboxClick(e) {
     var btn = e.target.closest("button[data-act]");
     if (!btn) return;
     var card = btn.closest(".sugg");
-    if (!card) return;
+    if (!card || !card._item) return;
     var item = card._item;
-    var wrap = card.querySelector(".reply-wrap");
-    var ta = card.querySelector(".reply-text");
-    var st = card.querySelector(".inbox-item-status");
-    var act = btn.dataset.act;
-
-    if (act === "suggest") {
-      wrap.classList.remove("hidden");
-      btn.disabled = true;
-      var old = btn.textContent; btn.textContent = "Drafting…";
-      try { ta.value = (await draftReplyFor(item)).trim(); }
-      catch (err) { if (st) st.textContent = "❌ " + err.message; }
-      finally { btn.disabled = false; btn.textContent = old; }
-    } else if (act === "copy") {
-      navigator.clipboard.writeText(ta.value).then(function () { if (st) st.textContent = "✅ Copied"; });
-    } else if (act === "post") {
-      if (!ta.value.trim()) { if (st) st.textContent = "Write a reply first."; return; }
-      btn.disabled = true; if (st) st.textContent = "Posting…";
-      var res = await postReplyOnPage(item, ta.value);
-      if (res.ok) {
-        if (st) st.textContent = "✅ Posted to Skool.";
-      } else if (res.code === "no_template" || res.code === "not_active" || res.code === "no_tab") {
-        // Fall back to copy + open the post so it's paste-and-send.
-        try { await navigator.clipboard.writeText(ta.value); } catch (e2) {}
-        window.open(postDeepLink(item), "_blank", "noopener");
-        if (st) st.textContent = res.code === "no_template"
-          ? "Copied — reply to one comment manually on Skool once so I can learn how to post, then this posts directly."
-          : "Copied & opened Skool — paste and send.";
-      } else {
-        if (st) st.textContent = "❌ " + (res.error || "Couldn't post.");
-      }
-      btn.disabled = false;
+    if (btn.dataset.act === "open") {
+      window.open(postDeepLink(item), "_blank", "noopener");
+    } else if (btn.dataset.act === "copy") {
+      navigator.clipboard.writeText((item.author || "member") + ": " + (item.text || ""))
+        .then(function () { flash(btn, "\u2705"); });
     }
   }
 
-  function escapeHtml(s) {
-    var div = document.createElement("div");
-    div.textContent = s;
-    return div.innerHTML;
+  /* ------------------------- pillar tracker ------------------------ */
+
+  var STATUS_META = {
+    ok:      { icon: "\u2705", label: "on track" },
+    due:     { icon: "\u23f3", label: "due" },
+    overdue: { icon: "\ud83d\udd34", label: "drought" },
+    never:   { icon: "\u26aa", label: "never posted" },
+    none:    { icon: "\u2796", label: "no target" },
+  };
+
+  function renderPillarTracker() {
+    var host = $("sp-pillars");
+    if (!host) return;
+    if (!pillars.length) { host.innerHTML = '<p class="muted">No pillars yet \u2014 set them up in the web app\u0027s Settings.</p>'; return; }
+    var coverage = SC.health.pillarCoverage(posts, pillars);
+    host.innerHTML = coverage.map(function (c) {
+      var meta = STATUS_META[c.status] || STATUS_META.none;
+      var since = c.daysSinceLast === null ? "never posted"
+        : c.daysSinceLast === 0 ? "posted today"
+        : "last " + c.daysSinceLast + "d ago";
+      var pct = Math.min(100, c.targetPct > 0 ? (c.actualPct / c.targetPct) * 100 : 0);
+      return '<div class="pillar-line ' + c.status + '">' +
+        '<div class="pl-head"><span class="pl-name">' + meta.icon + " " + escapeHtml(c.name) + "</span>" +
+        '<span class="pl-meta">' + c.actualPct + "% / " + c.targetPct + "% \u00b7 " + since + "</span></div>" +
+        '<div class="pl-track"><div class="pl-fill" style="width:' + pct.toFixed(0) + '%"></div></div>' +
+        "</div>";
+    }).join("");
   }
 
   /* --------------------------- generation -------------------------- */
@@ -497,10 +454,11 @@
     }
   }
 
-  /* ------------------ standalone reply drafter --------------------- */
+  /* --------------------------- page pulse -------------------------- */
   // Works with NO backend: reads the current Skool tab via the content
-  // script's class-free extractor and drafts replies from the LOCAL voice
-  // profile. Suggestion-only — copy what you like; nothing is posted.
+  // script's class-free extractor and grades what's visible — pillar per
+  // post (keyword classifier), silent posts, and the open post's comment
+  // feed (copy-only). Read-only; nothing is ever posted.
 
   var saSlug = null;      // slug of the last page read (for the override toggle)
   var saInited = false;
@@ -515,23 +473,8 @@
       var overrides = (await SC.storage.get("sc_admin_override")) || {};
       if (e.target.checked) overrides[saSlug] = true; else delete overrides[saSlug];
       await SC.storage.set("sc_admin_override", overrides);
-      $("sp-sa-status").textContent = "Saved — reload your Skool tab, then Read again.";
+      $("sp-sa-status").textContent = "Saved \u2014 reload your Skool tab, then Read again.";
     });
-    refreshVoiceNote();
-  }
-
-  async function refreshVoiceNote() {
-    var v = await SC.localVoice.load();
-    var note = $("sp-sa-voice-note");
-    if (v.samples && v.samples.length) {
-      note.innerHTML = "Voice: " + v.samples.length + " sample reply(ies) saved. " +
-        "<button id=\"sp-sa-voice-link\" class=\"link\" type=\"button\">Edit</button>";
-    } else {
-      note.innerHTML = "No voice set — drafts are generic until you " +
-        "<button id=\"sp-sa-voice-link\" class=\"link\" type=\"button\">add sample replies</button>.";
-    }
-    var link = $("sp-sa-voice-link");
-    if (link) link.addEventListener("click", function () { chrome.runtime.openOptionsPage(); });
   }
 
   function queryActiveSkoolTab() {
@@ -549,14 +492,15 @@
     $("sp-sa-error").textContent = "";
     $("sp-sa-status").textContent = "";
     $("sp-sa-posts").innerHTML = "";
+    $("sp-sa-summary").innerHTML = "";
     var btn = $("sp-sa-read");
-    btn.disabled = true; btn.textContent = "Reading…";
+    btn.disabled = true; btn.textContent = "Reading\u2026";
     try {
       var tab = await queryActiveSkoolTab();
       var limit = Number($("sp-sa-limit").value) || 40;
       var res = await new Promise(function (resolve, reject) {
         chrome.tabs.sendMessage(tab.id, { type: "READ_PAGE_DRAFTS_SOURCE", limit: limit }, function (r) {
-          if (chrome.runtime.lastError) reject(new Error("Couldn't reach the page — reload your Skool tab once, then retry."));
+          if (chrome.runtime.lastError) reject(new Error("Couldn\u0027t reach the page \u2014 reload your Skool tab once, then retry."));
           else resolve(r);
         });
       });
@@ -567,80 +511,100 @@
           var ov = (await SC.storage.get("sc_admin_override")) || {};
           $("sp-sa-override").checked = !!(saSlug && ov[saSlug]);
         }
-        throw new Error((res && res.error) || "Couldn't read the page.");
+        throw new Error((res && res.error) || "Couldn\u0027t read the page.");
       }
       $("sp-sa-override-row").classList.add("hidden");
-      renderStandaloneSource(res);
+      renderPagePulse(res);
     } catch (e) {
       $("sp-sa-error").textContent = String((e && e.message) || e);
     } finally {
-      btn.disabled = false; btn.textContent = "📥 Read this page";
+      btn.disabled = false; btn.textContent = "\ud83d\udce5 Read this page";
     }
   }
 
-  function renderStandaloneSource(res) {
+  function pulsePillarChip(text) {
+    var guess = SC.classifyPillar(text || "");
+    var label = null;
+    if (guess.pillar) {
+      var match = pillars.find(function (p) { return p.slug === guess.pillar; });
+      label = match ? match.name : guess.pillar;
+    }
+    return label
+      ? '<span class="chip pillar">' + escapeHtml(label) + "</span>"
+      : '<span class="chip none">unclassified</span>';
+  }
+
+  function renderPagePulse(res) {
     var host = $("sp-sa-posts");
+    var summary = $("sp-sa-summary");
     host.innerHTML = "";
     var items = res.mode === "detail" ? [res.post] : (res.posts || []);
     items = items.filter(function (p) { return p && (p.title || p.body); });
-    var comments = res.mode === "detail" ? (res.comments || []) : [];
-    if (!items.length && !comments.length) {
+    var pulseComments = res.mode === "detail" ? (res.comments || []) : [];
+
+    if (!items.length && !pulseComments.length) {
       $("sp-sa-status").textContent = res.mode === "detail"
-        ? "Couldn't read this post — scroll it into view and retry."
-        : "No posts found on this page — scroll the feed a little and retry.";
+        ? "Couldn\u0027t read this post \u2014 scroll it into view and retry."
+        : "No posts found on this page \u2014 scroll the feed a little and retry.";
       return;
     }
-    $("sp-sa-status").textContent = res.mode === "detail"
-      ? "On a post with " + comments.length + " comment(s) visible" +
-        (comments.length ? " — scroll the thread and re-read to load more." : ".")
-      : "Found " + items.length + " post(s). Draft replies to any of them.";
 
-    // The post itself (feed: each post).
+    // Pulse summary: pillar mix + unclassified share of what\u0027s visible.
+    if (res.mode === "feed" && items.length) {
+      var byPillar = {}, unclassified = 0;
+      items.forEach(function (p) {
+        var g = SC.classifyPillar(((p.title || "") + "\n" + (p.body || "")));
+        if (g.pillar) byPillar[g.pillar] = (byPillar[g.pillar] || 0) + 1;
+        else unclassified++;
+      });
+      var bits = Object.keys(byPillar).map(function (slug) {
+        var match = pillars.find(function (p) { return p.slug === slug; });
+        return (match ? match.name : slug) + " \u00d7" + byPillar[slug];
+      });
+      if (unclassified) bits.push("unclassified \u00d7" + unclassified);
+      summary.innerHTML = '<p class="muted">Visible mix: ' + escapeHtml(bits.join(" \u00b7 ")) + "</p>";
+      $("sp-sa-status").textContent = "Found " + items.length + " post(s) on this page.";
+    } else if (res.mode === "detail") {
+      $("sp-sa-status").textContent = "On a post with " + pulseComments.length +
+        " comment(s) visible" + (pulseComments.length ? " \u2014 scroll the thread and re-read to load more." : ".");
+    }
+
     items.forEach(function (post) {
       var div = document.createElement("div");
       div.className = "sugg";
-      div._post = post;
-      div._comments = comments;
-      var fullText = (post.title ? post.title + " — " : "") + (post.body || "");
-      var snippet = fullText.slice(0, 120) + (fullText.length > 120 ? "…" : "");
+      var fullText = (post.title ? post.title + " \u2014 " : "") + (post.body || "");
+      var snippet = fullText.slice(0, 120) + (fullText.length > 120 ? "\u2026" : "");
       div.innerHTML =
-        '<div class="head"><span class="who">' + escapeHtml(post.author || "Post") + "</span></div>" +
-        '<div class="snippet">' + escapeHtml(snippet) + "</div>" +
-        '<div class="row"><button class="btn small primary" data-act="draft">✍️ Draft 3 replies</button></div>' +
-        '<p class="muted sa-item-status"></p><div class="sa-drafts"></div>';
+        '<div class="head"><span class="who">' + escapeHtml(post.author || "Post") + "</span>" +
+        pulsePillarChip((post.title || "") + "\n" + (post.body || "")) + "</div>" +
+        '<div class="snippet">' + escapeHtml(snippet) + "</div>";
       host.appendChild(div);
     });
 
-    // Detail mode: the comment feed itself — visible, copyable, answerable.
-    if (res.mode === "detail" && comments.length) {
+    // Detail mode: the comment feed \u2014 visible + copyable.
+    if (res.mode === "detail" && pulseComments.length) {
       var head = document.createElement("div");
       head.className = "sa-comments-head";
       head.innerHTML =
-        '<span class="who">💬 Comment feed (' + comments.length + ")</span>" +
-        '<button class="btn small" data-act="copy-thread" type="button">📋 Copy all</button>';
+        '<span class="who">\ud83d\udcac Comment feed (' + pulseComments.length + ")</span>" +
+        '<button class="btn small" data-act="copy-thread" type="button">\ud83d\udccb Copy all</button>';
       host.appendChild(head);
       host._post = items[0] || res.post || null;
-      host._comments = comments;
-      comments.forEach(function (c, i) {
+      host._comments = pulseComments;
+      pulseComments.forEach(function (c) {
         var div = document.createElement("div");
         div.className = "sugg sa-comment";
         div._comment = c;
-        div._post = host._post;
-        div._comments = comments;
         div.innerHTML =
           '<div class="head"><span class="who">' + escapeHtml(c.authorName || "Member") + "</span></div>" +
           '<div class="snippet sa-comment-body">' + escapeHtml(c.body || "") + "</div>" +
-          '<div class="row">' +
-          '<button class="btn small primary" data-act="draft-comment">💬 Suggest answers</button>' +
-          '<button class="btn small" data-act="copy-comment">📋</button>' +
-          "</div>" +
-          '<p class="muted sa-item-status"></p><div class="sa-drafts"></div>';
+          '<div class="row"><button class="btn small" data-act="copy-comment">\ud83d\udccb Copy</button></div>';
         host.appendChild(div);
       });
     }
   }
 
-  function threadAsText(post, comments) {
+  function threadAsText(post, list) {
     var lines = [];
     if (post && (post.title || post.body)) {
       lines.push("POST" + (post.author ? " by " + post.author : "") + ":");
@@ -649,7 +613,7 @@
       lines.push("");
     }
     lines.push("COMMENTS:");
-    (comments || []).forEach(function (c) {
+    (list || []).forEach(function (c) {
       lines.push("- " + (c.authorName || "member") + ": " + (c.body || ""));
     });
     return lines.join("\n");
@@ -659,76 +623,16 @@
     var btn = e.target.closest("button[data-act]");
     if (!btn) return;
     var act = btn.dataset.act;
-
-    // Copy the whole visible comment feed as plain text.
     if (act === "copy-thread") {
       var hostEl = $("sp-sa-posts");
       navigator.clipboard.writeText(threadAsText(hostEl._post, hostEl._comments || []))
-        .then(function () { flash(btn, "✅ Copied"); });
-      return;
-    }
-
-    var card = btn.closest(".sugg");
-    if (!card) return;
-    var st = card.querySelector(".sa-item-status");
-
-    if (act === "draft" || act === "draft-comment") {
-      btn.disabled = true; var old = btn.textContent; btn.textContent = "Drafting…";
-      if (st) st.textContent = "";
-      try {
-        var drafts = await standaloneDraft(card._post, card._comments,
-          act === "draft-comment" ? card._comment : null);
-        renderStandaloneDrafts(card.querySelector(".sa-drafts"), drafts);
-      } catch (err) {
-        if (st) st.textContent = "❌ " + err.message;
-      } finally { btn.disabled = false; btn.textContent = old; }
+        .then(function () { flash(btn, "\u2705 Copied"); });
     } else if (act === "copy-comment") {
-      var c = card._comment || {};
+      var card = btn.closest(".sugg");
+      var c = (card && card._comment) || {};
       navigator.clipboard.writeText((c.authorName || "member") + ": " + (c.body || ""))
-        .then(function () { flash(btn, "✅"); });
-    } else if (act === "copy") {
-      var ta = card.querySelector('textarea[data-draft="' + btn.dataset.i + '"]');
-      if (ta) navigator.clipboard.writeText(ta.value).then(function () { flash(btn, "✅"); });
+        .then(function () { flash(btn, "\u2705"); });
     }
-  }
-
-  async function standaloneDraft(post, comments, replyTo) {
-    var settings = (await SC.storage.get("sc_ai_settings")) || {};
-    if (!settings.provider) throw new Error("No AI provider set. Open Settings and add your key.");
-    var apiKey = await SC.vault.loadApiKey(settings.provider);
-    if (!apiKey) throw new Error("No API key stored for " + settings.provider + ". Open Settings.");
-    var voice = await SC.localVoice.load();
-    var text = await SC.generateDraft({
-      provider: settings.provider, apiKey: apiKey, model: settings.model,
-      system: SC.LOCAL_REPLY_SYSTEM_PROMPT, maxTokens: 2000,
-      prompt: SC.buildLocalReplyPrompt({
-        post: post, comments: comments, replyTo: replyTo || null,
-        voice: voice, count: 3,
-      }),
-    });
-    var drafts = SC.parseReplyDrafts(text, 3);
-    if (!drafts.length) throw new Error("Couldn't parse a reply from the model — try again.");
-    return drafts;
-  }
-
-  function renderStandaloneDrafts(host, drafts) {
-    host.innerHTML = "";
-    drafts.forEach(function (d, i) {
-      var wrap = document.createElement("div");
-      wrap.className = "sa-draft";
-      var ta = document.createElement("textarea");
-      ta.rows = 3; ta.value = d; ta.setAttribute("data-draft", String(i));
-      ta.setAttribute("autocapitalize", "sentences"); ta.setAttribute("autocorrect", "off");
-      wrap.appendChild(ta);
-      var row = document.createElement("div");
-      row.className = "row";
-      var copy = document.createElement("button");
-      copy.className = "btn small"; copy.type = "button";
-      copy.textContent = "📋 Copy"; copy.dataset.act = "copy"; copy.dataset.i = String(i);
-      row.appendChild(copy);
-      wrap.appendChild(row);
-      host.appendChild(wrap);
-    });
   }
 
   /* ------------------------- skip sign-in (solo) -------------------- */

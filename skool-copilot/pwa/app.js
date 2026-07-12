@@ -201,6 +201,20 @@
           ? latency.unansweredQuestions + " waiting →" : "Open inbox →",
       },
     ];
+    var silent = SC.health.silentPosts(posts);
+    var voices = SC.health.newVoices(state.comments);
+    var best = SC.health.bestDay(posts);
+    var streak = SC.health.streak(posts);
+    tiles.push(
+      { l: "Silent posts (0 comments, 30d)",
+        v: silent.silentPct == null ? "\u2014" : silent.silentPct + "%" },
+      { l: "New voices (30d)",
+        v: voices.activeCommenters ? String(voices.newCommenters) : "\u2014" },
+      { l: "Best day to post",
+        v: best ? best.day : "\u2014" },
+      { l: "Posting streak",
+        v: streak.weeks ? streak.weeks + "w" : "\u2014" }
+    );
     $("dash-stats").innerHTML = tiles.map(function (t) {
       var inner = '<div class="v">' + t.v + '</div><div class="l">' + t.l + "</div>" +
         (t.sub ? '<div class="l link-sub">' + escapeHtml(t.sub) + "</div>" : "");
@@ -211,6 +225,9 @@
 
     SCCharts.lineChart($("chart-engagement"), trend.points);
     SCCharts.pillarBars($("chart-pillars"), balance.rows);
+
+    renderPillarTracker();
+    fillGenPillarSelect();
 
     var flags = SC.health.flags(posts, state.pillars);
     $("dash-flags").innerHTML = flags.length
@@ -264,7 +281,7 @@
     });
 
     $("inbox-reply-caps").textContent = state.comments.length
-      ? "Replies you queue post automatically when you next open Skool with the extension active."
+      ? "Open each on Skool to reply \u2014 fast answers train members to post."
       : "";
 
     var host = $("inbox-list");
@@ -308,17 +325,9 @@
       '<span class="counts">waiting ' + wait + "</span></div>" +
       '<div class="snippet">' + escapeHtml(item.text || "") + "</div>" +
       '<div class="row inbox-actions">' +
-      '<button class="btn small" data-act="suggest">✨ Suggest reply</button>' +
-      '<button class="btn small" data-act="open">↗ Copy &amp; open Skool</button>' +
-      "</div>" +
-      '<div class="reply-box hidden">' +
-      '<textarea class="touch reply-text" rows="3" autocapitalize="sentences" autocorrect="off" ' +
-      'placeholder="Write or generate a reply…"></textarea>' +
-      '<div class="row">' +
-      '<button class="btn small primary" data-act="queue">📤 Queue for Skool</button>' +
-      '<button class="btn small" data-act="copy">📋 Copy</button>' +
-      '<span class="meta reply-status"></span>' +
-      "</div></div>";
+      '<button class="btn small primary" data-act="open">\u2197 Open on Skool</button>' +
+      '<button class="btn small" data-act="copy-ctx">\ud83d\udccb Copy</button>' +
+      "</div>";
     el._item = item;
     return el;
   }
@@ -350,8 +359,6 @@
           escapeHtml(n.author || "Member") + (n.is_owner ? ' <span class="owner-tag">you</span>' : "") +
           '</span></div>' +
           '<div class="tc-text">' + escapeHtml(n.comment_text || "") + "</div>" +
-          (n.is_owner ? "" :
-            '<button class="btn tiny" data-reply="' + escapeHtml(n.comment_key || "") + '">↩ Reply</button>') +
           "</div>"
         );
         if (n.replies && n.replies.length) walk(n.replies, depth + 1);
@@ -372,101 +379,22 @@
     return out;
   }
 
-  async function loadVoiceForCurrent() {
-    if (state.voice) return state.voice;
-    var rows = await state.client.from("voice_profiles").select("*")
-      .eq("community_id", state.currentId).limit(1);
-    state.voice = (rows && rows[0]) || {};
-    return state.voice;
-  }
-
-  // Draft a reply to one comment/post using the shared voice profile.
-  async function draftReply(item, thread) {
-    var demo = await SC.isDemo();
-    var settings = (await SC.storage.get(AI_SETTINGS_KEY)) || {};
-    var apiKey = settings.provider ? await SC.vault.loadApiKey(settings.provider) : null;
-    if (!apiKey) {
-      if (demo) return SC.demoReply(item.author, item.text);
-      if (!settings.provider) throw new Error("Configure an AI provider in Settings first.");
-      throw new Error("No API key stored for " + settings.provider + ". Add it in Settings.");
-    }
-    var voice = await loadVoiceForCurrent();
-    var post = state.posts.find(function (p) { return p.post_key === item.post_key; });
-    return SC.generateDraft({
-      provider: settings.provider,
-      apiKey: apiKey,
-      model: settings.model,
-      system: SC.COMMENT_REPLY_SYSTEM_PROMPT,
-      maxTokens: 1200,
-      prompt: SC.buildCommentReplyPrompt({
-        communityName: currentCommunity() ? currentCommunity().name : "",
-        voice: voice,
-        postText: post ? post.post_text : "",
-        comment: { author: item.author, text: item.text },
-        thread: thread || [],
-      }),
-    });
-  }
-
-  async function enqueueReply(item, text) {
-    if (!text.trim()) throw new Error("Nothing to queue — write a reply first.");
-    await state.client.from("reply_queue").insert({
-      community_id: state.currentId,
-      target_post_key: item.post_key || "",
-      target_comment_key: item.kind === "comment" ? (item.comment_key || null) : null,
-      reply_text: text,
-      context_text: (item.text || "").slice(0, 500),
-    });
-  }
-
   async function onInboxClick(e) {
-    var btn = e.target.closest("button[data-act], button[data-reply]");
+    var btn = e.target.closest("button[data-act]");
     if (!btn) return;
-
-    // Reply-to-a-specific-comment button inside a thread.
-    if (btn.hasAttribute("data-reply")) {
-      var key = btn.getAttribute("data-reply");
-      var comment = state.comments.find(function (c) { return c.comment_key === key; });
-      if (comment) {
-        location.hash = "#/inbox";
-        var pseudo = { kind: "comment", post_key: comment.post_key, comment_key: comment.comment_key,
-          author: comment.author, text: comment.comment_text };
-        openAdHocReply(pseudo);
-      }
-      return;
-    }
-
     var act = btn.dataset.act;
     var itemEl = btn.closest(".inbox-item");
     var groupEl = btn.closest(".thread-group");
 
-    if (itemEl) {
+    if (itemEl && itemEl._item) {
       var item = itemEl._item;
-      var box = itemEl.querySelector(".reply-box");
-      var ta = itemEl.querySelector(".reply-text");
-      var status = itemEl.querySelector(".reply-status");
-      if (act === "suggest") {
-        box.classList.remove("hidden");
-        status.textContent = "Drafting…";
-        btn.disabled = true;
-        try {
-          ta.value = (await draftReply(item, [])).trim();
-          status.textContent = "";
-        } catch (err) { status.textContent = "❌ " + err.message; }
-        finally { btn.disabled = false; }
-      } else if (act === "open") {
-        try { await navigator.clipboard.writeText(ta && ta.value.trim() ? ta.value : ""); } catch (e2) {}
+      if (act === "open") {
         window.open(postDeepLink(item.post_key), "_blank", "noopener");
-      } else if (act === "queue") {
-        status.textContent = "Queuing…";
+      } else if (act === "copy-ctx") {
         try {
-          await enqueueReply(item, ta.value);
-          status.textContent = "✅ Queued — opens Skool-side when the extension sees your tab.";
-          btn.disabled = true;
-        } catch (err) { status.textContent = "❌ " + err.message; }
-      } else if (act === "copy") {
-        try { await navigator.clipboard.writeText(ta.value); status.textContent = "✅ Copied"; }
-        catch (e3) { status.textContent = "Copy failed."; }
+          await navigator.clipboard.writeText((item.author || "member") + ": " + (item.text || ""));
+          flash(btn, "\u2705 Copied");
+        } catch (e2) { /* clipboard unavailable */ }
       }
       return;
     }
@@ -476,7 +404,7 @@
       if (act === "toggle") {
         var body = groupEl.querySelector(".thread-body");
         var open = body.classList.toggle("hidden");
-        btn.textContent = open ? "▸" : "▾";
+        btn.textContent = open ? "\u25b8" : "\u25be";
         if (!open && !body.dataset.rendered) {
           body.innerHTML = renderThreadBody(g);
           body.dataset.rendered = "1";
@@ -484,27 +412,14 @@
       } else if (act === "summarize") {
         var sum = groupEl.querySelector(".thread-summary");
         sum.classList.remove("hidden");
-        sum.textContent = "Summarizing…";
+        sum.textContent = "Summarizing\u2026";
         btn.disabled = true;
         try {
           sum.textContent = (await summarizeThread(g)).trim();
-        } catch (err) { sum.textContent = "❌ " + err.message; }
+        } catch (err) { sum.textContent = "\u274c " + err.message; }
         finally { btn.disabled = false; }
       }
     }
-  }
-
-  // Reply to an arbitrary comment picked from a thread: scroll an ad-hoc
-  // composer into the needs-response host.
-  function openAdHocReply(item) {
-    var host = $("inbox-list");
-    var existing = host.querySelector('.inbox-item[data-adhoc="' + (item.comment_key || "") + '"]');
-    if (existing) { existing.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
-    var el = inboxItemEl(item, 0);
-    el.setAttribute("data-adhoc", item.comment_key || "");
-    el.querySelector(".reply-box").classList.remove("hidden");
-    host.insertBefore(el, host.firstChild);
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
   async function summarizeThread(g) {
@@ -531,6 +446,54 @@
     });
   }
 
+  /* ------------------------- pillar tracker ------------------------ */
+
+  var PILLAR_STATUS_META = {
+    ok:      { icon: "\u2705", label: "on track" },
+    due:     { icon: "\u23f3", label: "due" },
+    overdue: { icon: "\ud83d\udd34", label: "drought" },
+    never:   { icon: "\u26aa", label: "never posted" },
+    none:    { icon: "\u2796", label: "no target" },
+  };
+
+  function renderPillarTracker() {
+    var host = $("dash-pillar-tracker");
+    if (!host) return;
+    if (!state.pillars.length) {
+      host.innerHTML = '<p class="muted">No pillars yet \u2014 set them up in Settings.</p>';
+      return;
+    }
+    var coverage = SC.health.pillarCoverage(state.posts, state.pillars);
+    host.innerHTML = coverage.map(function (c) {
+      var meta = PILLAR_STATUS_META[c.status] || PILLAR_STATUS_META.none;
+      var since = c.daysSinceLast === null ? "never posted"
+        : c.daysSinceLast === 0 ? "posted today"
+        : "last " + c.daysSinceLast + "d ago";
+      var pct = Math.min(100, c.targetPct > 0 ? (c.actualPct / c.targetPct) * 100 : 0);
+      return '<div class="pillar-line ' + c.status + '">' +
+        '<div class="pl-head"><span class="pl-name">' + meta.icon + " " + escapeHtml(c.name) + "</span>" +
+        '<span class="pl-meta">' + c.actualPct + "% of " + c.targetPct + "% target \u00b7 " +
+        c.postsInWindow + " post(s) \u00b7 " + since + "</span></div>" +
+        '<div class="pl-track"><div class="pl-fill" style="width:' + pct.toFixed(0) + '%"></div></div>' +
+        "</div>";
+    }).join("");
+  }
+
+  function fillGenPillarSelect() {
+    var sel = $("gen-pillar");
+    if (!sel) return;
+    var keep = sel.value || "auto";
+    sel.innerHTML = '<option value="auto">Auto (most overdue)</option>';
+    state.pillars.forEach(function (p) {
+      var opt = document.createElement("option");
+      opt.value = p.slug;
+      opt.textContent = p.name;
+      sel.appendChild(opt);
+    });
+    sel.value = Array.prototype.some.call(sel.options, function (o) { return o.value === keep; })
+      ? keep : "auto";
+  }
+
   /* --------------------------- generation -------------------------- */
 
   async function generateDraft() {
@@ -549,6 +512,16 @@
 
       var balance = SC.health.pillarBalance(state.posts, state.pillars);
       var overdue = SC.health.mostOverduePillar(balance);
+      // Manual pillar choice from the dropdown beats the auto pick.
+      var chosen = $("gen-pillar") ? $("gen-pillar").value : "auto";
+      if (chosen && chosen !== "auto") {
+        var manual = state.pillars.find(function (p) { return p.slug === chosen; });
+        if (manual) {
+          var bal = (balance.rows || []).find(function (r) { return r.slug === chosen; });
+          overdue = { slug: manual.slug, name: manual.name, description: manual.description,
+            deficit: bal ? bal.deficit : 0, targetPct: manual.target_ratio };
+        }
+      }
       if (!overdue) {
         var byTarget = state.pillars.slice().sort(function (a, b) {
           return (b.target_ratio || 0) - (a.target_ratio || 0);
@@ -886,6 +859,17 @@
     $("set-ai-status").textContent = stored ? "A key is saved for this provider." : "";
 
     // Pillars
+    var tsel = $("pillar-template");
+    if (tsel && !tsel.options.length) {
+      var ph = document.createElement("option");
+      ph.value = ""; ph.textContent = "Pick a community type\u2026";
+      tsel.appendChild(ph);
+      (SC.PILLAR_TEMPLATES || []).forEach(function (t) {
+        var opt = document.createElement("option");
+        opt.value = t.id; opt.textContent = t.label;
+        tsel.appendChild(opt);
+      });
+    }
     var host = $("pillars-editor");
     host.innerHTML = "";
     state.pillars.forEach(function (p) { host.appendChild(pillarRow(p)); });
@@ -1218,6 +1202,79 @@
         $("set-ai-status").textContent = "❌ " + String((e && e.message) || e);
       }
     });
+    // Load a pillar set (template or AI suggestion) into the editor.
+    // Rows matching an existing pillar's slug carry its id so saving
+    // UPDATES it (avoiding unique-slug collisions); everything else
+    // inserts, and pillars missing from the editor get deleted on save.
+    function slugify(name) {
+      return String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "").slice(0, 40);
+    }
+    function editorLoadPillars(list) {
+      var host = $("pillars-editor");
+      host.innerHTML = "";
+      (list || []).forEach(function (p) {
+        var slug = p.slug || slugify(p.name);
+        var existing = state.pillars.find(function (e) { return e.slug === slug; });
+        host.appendChild(pillarRow({
+          id: existing ? existing.id : "",
+          slug: slug,
+          name: p.name,
+          description: p.description || "",
+          target_ratio: p.target_ratio || 0,
+        }));
+      });
+      $("pillars-status").textContent =
+        "Loaded \u2014 review the rows, then click Save pillars to make it real.";
+    }
+
+    $("pillar-template").addEventListener("change", function (e) {
+      var t = SC.pillarTemplateById(e.target.value);
+      $("pillar-template-blurb").textContent = t ? t.blurb : "";
+    });
+    $("pillar-template-apply").addEventListener("click", function () {
+      var t = SC.pillarTemplateById($("pillar-template").value);
+      if (!t) { $("pillars-status").textContent = "Pick a community type first."; return; }
+      editorLoadPillars(t.pillars);
+    });
+
+    $("pillar-suggest").addEventListener("click", async function () {
+      var btn = $("pillar-suggest");
+      btn.disabled = true;
+      $("pillars-status").textContent = "Thinking about your community\u2026";
+      try {
+        var demo = await SC.isDemo();
+        var settings = (await SC.storage.get(AI_SETTINGS_KEY)) || {};
+        var apiKey = settings.provider ? await SC.vault.loadApiKey(settings.provider) : null;
+        var suggested;
+        if (!apiKey) {
+          if (!demo) throw new Error("Add an AI key in Settings above first \u2014 suggestions are one BYOK call.");
+          suggested = SC.demoPillarSuggestion();
+        } else {
+          var titles = state.posts.slice(0, 12).map(function (p) {
+            return (p.post_text || "").split("\n")[0].slice(0, 90);
+          });
+          var about = window.prompt(
+            "One sentence: what is your community about, and for whom?", "") || "";
+          var text = await SC.generateDraft({
+            provider: settings.provider, apiKey: apiKey, model: settings.model,
+            system: SC.PILLAR_SUGGEST_SYSTEM_PROMPT, maxTokens: 1200,
+            prompt: SC.buildPillarSuggestPrompt({
+              communityName: currentCommunity() ? currentCommunity().name : "",
+              about: about, recentTitles: titles,
+            }),
+          });
+          suggested = SC.parsePillarSuggestions(text);
+          if (!suggested) throw new Error("Couldn\u0027t parse the suggestion \u2014 try again.");
+        }
+        editorLoadPillars(suggested);
+      } catch (err) {
+        $("pillars-status").textContent = "\u274c " + err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
     $("pillar-add").addEventListener("click", function () {
       $("pillars-editor").appendChild(
         pillarRow({ name: "", description: "", target_ratio: 0 })

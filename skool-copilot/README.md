@@ -19,10 +19,10 @@ post that fills the gap.
 
 | Piece | What it does |
 |---|---|
-| `extension/` | Manifest V3 Chrome extension: content script scrapes the currently-viewed community (gated by ownership verification) and threads comments, a `world:"MAIN"` observer (`content/net-observer.js`) learns/replays Skool's comment request, the background worker syncs to Supabase, and the side panel shows health, the needs-response inbox, and generates drafts + replies without leaving Skool. |
-| `pwa/` | Mobile-friendly dashboard on the same account: health charts, needs-response inbox with threaded conversations + replies, idea inbox, draft editor, queue, settings. |
+| `extension/` | Manifest V3 Chrome extension: content script scrapes the currently-viewed community (gated by ownership verification) and threads comments, the background worker syncs to Supabase, and the side panel shows the health score, pillar tracker, needs-response inbox, page pulse, and the on-pillar post generator. |
+| `pwa/` | Mobile-friendly dashboard on the same account: health score + charts, pillar tracker, needs-response inbox with threaded conversations + summaries, pillar templates & AI suggestions, idea inbox, draft editor, queue, settings. |
 | `supabase/schema.sql` | Postgres schema + row-level security + default-pillar seed trigger. Multi-tenant from day one; every row is scoped to your `auth.users` id. Upgrades in `supabase/upgrade-00*.sql`. |
-| `extension/shared/` | Zero-dependency modules shared by both surfaces: Supabase REST client, encrypted BYOK key vault, multi-provider AI adapter, health engine (+ threading & needs-response), pillar classifier, and reply-request templating (`reply-template.js`). |
+| `extension/shared/` | Zero-dependency modules shared by both surfaces: Supabase REST client, encrypted BYOK key vault, multi-provider AI adapter, health engine (coverage, streaks, silent posts, new voices, threading, needs-response), pillar classifier, and pillar templates. |
 
 AI calls go **directly from your browser to the provider** using your own key.
 Keys are AES-GCM-encrypted with a locally generated device key and stored only
@@ -125,6 +125,12 @@ saving.
   conversation is carried by the same few people (the extension scrapes
   comments as well as posts)
 - **Dormant member flagging** — previously active posters gone quiet
+- **Pillar coverage** — per-pillar recency + share vs target with
+  on-track/due/drought status ("days since last fed" catches droughts that
+  percentage balance hides)
+- **Silent posts / new voices / streak / best day** — % of posts with zero
+  comments, first-time commenters per month, consecutive posting weeks, and
+  the weekday your posts earn the most engagement
 - **Response latency** — question → first reply time, plus unanswered questions
 - **Where to improve** — concrete, numbers-grounded suggestions computed from
   all of the above
@@ -140,58 +146,49 @@ verdict (is this community healthy, and why), what's working, and 3–5 concrete
 improvements tied to specific stats or quoted comments. Like drafting, this is
 one BYOK call from your browser — nothing goes through a middleman.
 
-## Read & suggest (side panel)
+## Pillar tracking (the core)
 
-While on your community, pick how many of the currently-loaded posts to read
-(5/10/20/all) and hit **📖 Read & suggest**. One BYOK call returns a
-recommendation per post — 👍 like it, 💬 quick comment, ✍️ detailed reply, or
-skip — with a reason and a drafted reply in your voice that you can edit and
-copy. Suggestion-only by design. Gated by the same ownership checks as scraping.
+- **Pillar tracker** (dashboard + side panel): per pillar, its share of recent
+  posts vs target AND how many days since it was last fed, with a plain
+  status — ✅ on track / ⏳ due / 🔴 drought / ⚪ never posted. Days-since
+  catches what percentage math hides: a pillar can be "at target" while
+  silent for three weeks.
+- **Fully customizable**: add, rename, retarget, and delete pillars in
+  Settings; the 6 generic defaults are just the starting point.
+- **Templates by community type**: curated pillar sets for
+  Coaching/Course, Fitness/Wellness, Business, Creative/Hobby, Tech/SaaS,
+  and Faith/Lifestyle communities (Settings → "Start from a template").
+  Every set's targets sum to 100; loading fills the editor, nothing is saved
+  until you click Save.
+- **AI suggestions**: "✨ Suggest for my community" reads your community's
+  name, your one-line description, and recent post titles, and proposes a
+  tailored 4–6 pillar set (one BYOK call).
 
-## Comment threads, the needs-response inbox & replying (v2)
+## Engagement tracking
 
-- **Full threads.** The scraper walks a post's whole comment tree (replies
-  nested under what they answer), not just the feed's comment count. Comment
-  content lives on each post's detail page, so threads fill in as you open
-  posts. Both the PWA (**Inbox → Conversations**) and the side panel show them
-  nested, with a one-click **Summarize** to catch up on a long chain.
-- **Needs-response inbox.** The response-latency stat on the dashboard is now a
-  link into an inbox listing the actual member questions/comments sitting past
-  your window with nothing back from you — instead of just a number.
-- **Suggested replies.** One tap drafts a reply to any comment in your voice
-  (same voice profile + one BYOK call as the post generator — no second cost
-  path).
-- **Actually replying.** Skool has no write API, so — rather than hardcode an
-  endpoint that drifts — the extension *learns* Skool's real comment request
-  the first time **you** post a comment manually (a `world:"MAIN"` observer
-  captures the request **shape**, redacted — never the text or ids), then
-  replays it from your live, logged-in tab. No Skool session token is ever
-  stored. A reply drafted in the PWA is queued in `reply_queue` and submitted by
-  the extension next time it sees your tab (spaced out so a batch never reads as
-  automation). If nothing's been learned yet or a submit fails, the reply is
-  copied to your clipboard and the post is opened — paste-and-send, never a dead
-  end. **Every submit is something you trigger; nothing is generated-and-sent on
-  its own.** See `CHANGELOG.md` for the full rationale.
+- **Needs-response inbox** (both surfaces): every member comment/question
+  past your response window with nothing back from you — with one-click
+  open-on-Skool. Answering these is the cheapest engagement win available.
+- **Threaded conversations** with one-click AI **thread summaries** to catch
+  up on long chains without reading top to bottom.
+- **New variables on the dashboard**: silent posts (% with zero comments),
+  new voices (first-time commenters this month), posting streak, and your
+  best day to post (by engagement).
+- **Page pulse** (side panel, no account needed): reads the posts on your
+  current Skool tab and shows the pillar mix of what's visible, plus the
+  open post's comment feed to copy.
 
-## Draft replies with no account (standalone)
-
-The side panel's **Draft replies** card works with **no Supabase backend and no
-web app** — just an AI key (set in the extension's Options) and, ideally, a few
-of your own sample replies pasted in Options so drafts sound like you. Hit
-**📥 Read this page** on your community and it lists the posts found;
-**✍️ Draft 3 replies** gives three options per post to copy. **Open a post** and
-Read this page shows its **Comment feed** — copy any comment (or the whole
-thread), and **💬 Suggest answers** drafts three replies to that specific
-comment in your voice. It reads Skool's DOM through the permalink anchor
-(`content/extract.js`) — never hashed class names, always keyed on the stable
-`slug`, never the rotating `postId` — so Skool restyling only ever affects that
-one file. Suggestion-only: nothing is posted.
+Deliberately **not** included: reply drafting/automation. This tool measures
+and advises; what you say to members stays yours.
 
 ## Post generator
 
 Drafts are grounded in the scraped stats: every generation prompt includes the
 health digest (score, trend, overdue pillar, unanswered questions) plus your
 voice profile and recent post titles. Options:
+
+- **Pillar** — Auto (fills the most overdue pillar) or pick any pillar
+  directly — e.g. straight from a drought flagged by the tracker
 
 - **Length** — short (≤500 chars, default) or medium (≤900); Skool posts that
   get read are short
@@ -209,10 +206,10 @@ Behind-the-Scenes (10%)
 ## Testing
 
 - `node test/smoke.test.js` — zero-dependency checks of everything pure:
-  pillar classifier, health engine (cadence, trend, balance, latency, comment
-  stats, score, improvements, digest), needs-response inbox, comment threading,
-  reply-request templating (learn/redact/replay), prompt builders, Unicode
-  styling.
+  pillar classifier, health engine (cadence, trend, balance, coverage,
+  streaks, silent posts, new voices, best day, latency, comment stats,
+  score, improvements, digest), needs-response, threading, pillar templates,
+  pillar-suggestion prompt + parser, draft prompts, Unicode styling.
 - `node test/e2e.js` — drives the **real PWA** headlessly through
   configure → sign in → add community → dashboard → AI deep review →
   generate draft → **inbox (suggest reply) → thread expand + summarize**, with
@@ -224,8 +221,8 @@ Behind-the-Scenes (10%)
 
 ## Out of scope
 
-- Auto-posting *new posts* to Skool (the post queue stays copy-paste; only
-  comment replies replay Skool's own request, and only ones you trigger)
+- Posting anything to Skool, including replies (measure and advise only —
+  the post queue stays copy-paste)
 - Billing/payments (BYOK means no usage metering)
 - Platforms other than Skool
 

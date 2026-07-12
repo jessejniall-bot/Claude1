@@ -282,19 +282,43 @@ const AI_DRAFT =
   await page2.waitForSelector(".draft-card");
   console.log("demo mode: saved draft visible in Drafts");
 
-  // v2: inbox — needs-response items render, suggest drafts a canned reply,
-  // threaded conversations render and summarize.
+  // v3: dashboard pillar tracker renders per-pillar status lines.
+  await page2.click('#tabs a[href="#/dashboard"]');
+  await page2.waitForSelector("#dash-pillar-tracker .pillar-line");
+  const trackerLines = await page2.$$eval("#dash-pillar-tracker .pillar-line", (n) => n.length);
+  console.log("demo mode: pillar tracker shows " + trackerLines + " pillar(s)");
+
+  // v3: generator pillar dropdown is populated (Auto + each pillar).
+  const genPillarOpts = await page2.$$eval("#gen-pillar option", (n) => n.length);
+  if (genPillarOpts < 2) throw new Error("gen-pillar not populated: " + genPillarOpts);
+  console.log("demo mode: generator pillar select has " + genPillarOpts + " options");
+
+  // v3: settings — template picker loads a pillar set into the editor.
+  await page2.click('#tabs a[href="#/settings"]');
+  await page2.waitForFunction(
+    () => document.querySelectorAll("#pillar-template option").length >= 2,
+    { timeout: 8000 });
+  await page2.selectOption("#pillar-template", "fitness");
+  await page2.click("#pillar-template-apply");
+  await page2.waitForFunction(() => {
+    const rows = document.querySelectorAll("#pillars-editor .pillar-row");
+    if (!rows.length) return false;
+    return Array.from(rows).some((r) =>
+      r.querySelector('[data-f="name"]').value.includes("Transformations"));
+  }, { timeout: 5000 });
+  console.log("demo mode: fitness template loaded into pillar editor");
+
+  // v3: inbox — needs-response items render with open/copy (no drafting).
   await page2.click('#tabs a[href="#/inbox"]');
   await page2.waitForSelector("#view-inbox:not(.hidden)");
   await page2.waitForSelector("#inbox-list .inbox-item, #inbox-list .good-note");
   const inboxItems = await page2.$$eval("#inbox-list .inbox-item", (n) => n.length);
   if (inboxItems > 0) {
-    await page2.click("#inbox-list .inbox-item button[data-act='suggest']");
-    await page2.waitForFunction(() => {
-      const ta = document.querySelector("#inbox-list .inbox-item .reply-text");
-      return ta && ta.value.trim().length > 0;
-    }, { timeout: 8000 });
-    console.log("demo mode: inbox suggested a reply (" + inboxItems + " waiting)");
+    const hasOpen = await page2.$("#inbox-list .inbox-item button[data-act='open']");
+    const hasSuggest = await page2.$("#inbox-list .inbox-item button[data-act='suggest']");
+    if (!hasOpen) throw new Error("inbox item missing Open button");
+    if (hasSuggest) throw new Error("inbox still shows removed suggest-reply button");
+    console.log("demo mode: inbox lists " + inboxItems + " waiting (open/copy only)");
   } else {
     console.log("demo mode: inbox empty (all answered) — good-note shown");
   }
