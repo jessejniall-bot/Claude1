@@ -1,0 +1,26 @@
+{
+  "hotkey": "ctrl_r",
+  "hotkey_mode": "hold",
+
+  "model": "base.en",
+  "device": "auto",
+  "compute_type": "auto",
+  "language": "en",
+  "vad_filter": true,
+  "vocabulary": ["Kubernetes", "Anthropic", "Jesse"],
+
+  "insert_mode": "paste",
+  "restore_clipboard": true,
+  "trailing_space": true,
+
+  "auto_capitalize": true,
+  "collapse_spaces": true,
+  "remove_fillers": false,
+  "filler_words": ["um", "uh", "er", "erm", "hmm"],
+
+  "sample_rate": 16000,
+  "input_device": null,
+
+  "beep": true,
+  "save_history": true
+}
