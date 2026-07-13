@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<title>Ember — Community Campfire</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔥</text></svg>">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="scene" aria-hidden="true">
+  <canvas id="cv"></canvas>
+  <div id="floats"></div>
+  <div id="chips"></div>
+</div>
+
+<header id="hud">
+  <div class="pill" id="heatPill" title="The fire grows when people talk">🔥 <span id="heatLabel">Embers</span></div>
+  <div class="pill" id="peoplePill">👥 <span id="peopleCount">0</span> at the fire</div>
+  <div class="pill" id="msgsPill">💬 <span id="msgCount">0</span> tonight</div>
+  <div class="hud-spacer"></div>
+  <button class="iconbtn" id="soundBtn" title="Fire crackle on/off">🔇</button>
+  <button class="iconbtn" id="gearBtn" title="Settings">⚙️</button>
+</header>
+
+<aside id="panel">
+  <div id="panelHead">
+    <div>
+      <div id="brand">EMBER</div>
+      <div id="roomLabel">room: campfire</div>
+    </div>
+    <span id="modeBadge" class="badge demo">demo</span>
+  </div>
+  <div id="log" aria-live="polite"></div>
+  <div id="tossRow">
+    <button class="toss" data-kind="marshmallow" title="Toast a marshmallow">🍡</button>
+    <button class="toss" data-kind="sparks" title="Throw sparks">✨</button>
+    <button class="toss" data-kind="log" title="Throw a log on — big flare">🪵</button>
+    <div id="tossHint">toss something into the fire</div>
+  </div>
+  <form id="composer" autocomplete="off">
+    <input id="msgInput" maxlength="280" placeholder="Say something… every message feeds the fire" aria-label="Message">
+    <button id="sendBtn" type="submit" title="Send">🔥</button>
+  </form>
+</aside>
+
+<div class="overlay show" id="joinOverlay">
+  <div class="card">
+    <div class="card-flame">🔥</div>
+    <h1>Ember</h1>
+    <p class="tag">Your community's campfire.<br>The fire only burns while you talk.</p>
+    <input id="nameInput" maxlength="24" placeholder="What should we call you?" aria-label="Your name">
+    <button id="joinBtn">Pull up a log →</button>
+    <p class="fine" id="joinFine">Demo crowd is on — you won't be alone. (⚙️ to change)</p>
+  </div>
+</div>
+
+<div class="overlay" id="settingsOverlay">
+  <div class="card left">
+    <h2>⚙️ Settings</h2>
+
+    <label class="row"><span>Mode</span>
+      <select id="setMode">
+        <option value="demo">Demo — free, no accounts, simulated crowd</option>
+        <option value="live">Live — real people via Supabase (free tier)</option>
+      </select>
+    </label>
+
+    <label class="row"><span>Room name</span><input id="setRoom" maxlength="32" placeholder="campfire"></label>
+
+    <div id="liveFields">
+      <label class="row"><span>Supabase URL</span><input id="setSbUrl" placeholder="https://xxxx.supabase.co"></label>
+      <label class="row"><span>Supabase anon key</span><input id="setSbKey" placeholder="eyJhbGciOi…"></label>
+      <p class="fine">Create a free project at supabase.com → Settings → API. Paste the two values above. No card needed. Everyone who opens this page with the same room name shares one fire. Optional: run <code>setup.sql</code> for message history.</p>
+    </div>
+
+    <label class="row check"><input type="checkbox" id="setDemoCrowd" checked><span>Demo crowd (simulated members)</span></label>
+    <label class="row check"><input type="checkbox" id="setSound"><span>Fire crackle sound</span></label>
+
+    <div class="btnrow">
+      <button id="settingsSave">Save</button>
+      <button id="settingsClose" class="ghost">Close</button>
+    </div>
+  </div>
+</div>
+
+<script src="fire.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

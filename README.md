@@ -1,6 +1,6 @@
 # Skool Tools
 
-Two projects live in this repo:
+Three projects live in this repo:
 
 - **Skool Prompt Forge** (repo root) — a zero-dependency generator for
   engagement-ready Skool posts about Google Gemini. Docs below.
@@ -9,6 +9,10 @@ Two projects live in this repo:
   measures content health, and drafts on-pillar, on-voice posts with your own
   AI key (Anthropic / OpenAI / Gemini / Grok). Supabase backend, multi-tenant,
   BYOK.
+- **[Ember](ember/README.md)** (`ember/`) — an animated community campfire
+  chat that lives outside Skool: the fire only burns while people talk.
+  Free demo mode with a simulated crowd; goes live on Supabase's free tier.
+  Members join by invite link only — no scraping, no auto-adds.
 
 ---
 
