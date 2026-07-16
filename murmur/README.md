@@ -1,52 +1,65 @@
-# Murmur — Voice Notepad (keyless, local)
+# Murmur — Voice Notepad
 
-Talk into a notepad; your words are transcribed by your browser and tidied up by
-local rules. Then hit **Copy** and paste anywhere. No account, no API key, and
-nothing is sent to any server we run — it's a single HTML file.
+Open a link, talk, and get genuinely good text — on your computer *and* your
+phone (iPhone included). Murmur records your voice and sends it to a Whisper
+transcription service, so quality and accents are excellent. Then you press
+**Copy** and paste it anywhere.
 
-## Run it
+It's a single HTML file with no backend. Your API key is entered in the app and
+stored **only in your browser**, so the link is safe to share — each person adds
+their own key.
 
-1. Put `murmur.html` and `serve.bat` in the same folder.
-2. Double-click **`serve.bat`**. A browser tab opens at
-   `http://localhost:8000/murmur.html` and a small "Murmur server" window stays
-   open in the background.
-3. Use it in **Chrome or Edge** (other browsers don't support in-page voice).
-4. Close the "Murmur server" window when you're done.
+## Get it online (one-time, ~2 minutes)
 
-> **Why the little server?** Browsers block the speech engine on `file://`
-> pages (you'll see a "network" error). Serving from `http://localhost` is a
-> secure origin, so voice works reliably. `serve.bat` uses Python's built-in
-> web server — if you don't have Python, install it from python.org (tick
-> "Add to PATH"), or host `murmur.html` on any https site instead.
+The microphone only works on a secure **https** link, so host the file:
+
+1. On a computer, open **[app.netlify.com/drop](https://app.netlify.com/drop)**
+   in Chrome or Edge.
+2. Drag **`murmur.html`** onto the drop area (rename it to `index.html` first if
+   you want the site to open straight to it).
+3. Netlify gives you an `https://…netlify.app` link. That's your app — open it on
+   any device and send it to whoever you like.
+4. *(Optional)* Make a free Netlify account to keep the link permanently.
+
+You can also host it on GitHub Pages, Cloudflare Pages, or any static host.
+
+## One-time setup: your transcription key
+
+Murmur needs a key for the transcription service. Open **Settings (gear) →
+Transcription engine**, pick a service, and paste a key:
+
+- **Groq** — free tier, very fast. Get a key at
+  [console.groq.com/keys](https://console.groq.com/keys).
+- **OpenAI** — top quality. Get a key at
+  [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+  (add a little credit; transcription is ~$0.006/minute).
+
+The key is saved only in your browser. Everyone you share the link with adds
+their own — nothing is baked into the file.
 
 ## Using it
 
-- Press the **mic** (allow the microphone the first time) and talk. Text lands
-  in the notepad, tidied as you pause. Press the mic again to stop.
-- **Mode** (top bar):
-  - **Clean up** — capitalization, spacing, punctuation, filler removal.
-  - **Bullet points** — each sentence becomes a bullet.
-  - **Verbatim** — exactly as heard (still applies your corrections).
-- **Accent** (top bar) — set the recognizer's locale, including **English ·
-  Ireland** for Irish accents, plus UK, Australia, India, and more.
-- **Settings** (gear):
-  - **Cleanup options** — toggle filler removal, smart capitalization, and
-    spoken punctuation (say "period", "comma", "new line").
-  - **Corrections it learns** — when it mishears a name/term, add "it hears X →
-    you mean Y" and it's fixed on every dictation afterward.
-- **Copy** copies everything to your clipboard.
+- Press the **mic**, allow the microphone the first time, and talk. Press it
+  again to stop — a moment later the transcription lands in the notepad.
+- **Mode**: *Clean up* (tidy formatting), *Bullet points*, or *Verbatim*.
+- **Language**: the spoken language (accents are handled automatically — no need
+  to pick a region). Leave on English or choose another; *Auto-detect* also works.
+- **Settings → Corrections & names**: add names/terms it should nail (a
+  colleague's name, jargon). These are sent as a hint and fixed in the text.
+- **Tidy** re-cleans the current text; **Copy** copies everything.
 
-## Sharing
-
-Because it's just two files with no keys or accounts, send `murmur.html` +
-`serve.bat` to anyone (e.g. a colleague) and they run it the same way. Their
-settings and corrections are saved on their own machine.
+Works on desktop Chrome/Edge/Safari and on phones including iPhone, because it
+records audio (via MediaRecorder) instead of relying on the browser's built-in
+dictation.
 
 ## Privacy
 
-Everything runs in your browser. Your notes, corrections, and settings are
-stored only in that browser (local storage). The one thing that leaves your
-machine: to convert speech to text, **Chrome's built-in voice recognition sends
-the audio to Google's servers** — that's how the browser's dictation works, not
-something this app adds. If you need audio to never leave the device, use the
-on-device Whisper desktop app (`flowlocal/`) instead.
+Your notes, corrections, and key stay in your browser (local storage). Your
+**audio** is sent to the transcription service you chose (OpenAI or Groq) to be
+turned into text, and nowhere else. Murmur has no server of its own.
+
+## Files
+
+- `murmur.html` — the whole app (host this).
+- `serve.bat` — optional: run it locally at `http://localhost:8000` for testing
+  on a Windows PC (still needs a key and internet for transcription).
