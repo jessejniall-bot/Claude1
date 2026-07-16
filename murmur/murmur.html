@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Murmur — Voice Notepad</title>
+<style>
+  :root{
+    --bg:#E9EBEC; --surface:#FCFCFB; --surface-2:#F2F3F2;
+    --ink:#1B2024; --muted:#5F676E; --faint:#8A9299;
+    --line:#DCDFE0; --line-strong:#C7CBCD;
+    --accent:#2E6F6A; --accent-ink:#204F4B; --accent-soft:rgba(46,111,106,.12);
+    --record:#D8503C; --record-soft:rgba(216,80,60,.14);
+    --shadow:0 1px 2px rgba(20,30,35,.05), 0 10px 34px rgba(20,30,35,.07);
+    --radius:14px;
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,"Times New Roman",serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#121517; --surface:#191D20; --surface-2:#20252A;
+      --ink:#E7E9E5; --muted:#98A0A7; --faint:#6E767D;
+      --line:#282D31; --line-strong:#374046;
+      --accent:#79C0B6; --accent-ink:#A7D9D1; --accent-soft:rgba(121,192,182,.14);
+      --record:#EA6C55; --record-soft:rgba(234,108,85,.18);
+      --shadow:0 1px 2px rgba(0,0,0,.35), 0 14px 44px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#121517; --surface:#191D20; --surface-2:#20252A;
+    --ink:#E7E9E5; --muted:#98A0A7; --faint:#6E767D;
+    --line:#282D31; --line-strong:#374046;
+    --accent:#79C0B6; --accent-ink:#A7D9D1; --accent-soft:rgba(121,192,182,.14);
+    --record:#EA6C55; --record-soft:rgba(234,108,85,.18);
+    --shadow:0 1px 2px rgba(0,0,0,.35), 0 14px 44px rgba(0,0,0,.4);
+  }
+
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;display:flex;flex-direction:column;min-height:100dvh;
+  }
+  button,select,input,textarea{font-family:inherit}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+
+  header{
+    display:flex;align-items:center;gap:16px;padding:12px clamp(14px,4vw,28px);
+    border-bottom:1px solid var(--line);
+    background:color-mix(in srgb,var(--bg) 82%, transparent);backdrop-filter:blur(8px);
+    position:sticky;top:0;z-index:20;flex-wrap:wrap;
+  }
+  .brand{display:flex;align-items:baseline;gap:9px;margin-right:auto}
+  .brand .dot{width:11px;height:11px;border-radius:50%;background:var(--record);align-self:center;box-shadow:0 0 0 4px var(--record-soft);flex:0 0 auto}
+  .brand h1{font-family:var(--serif);font-size:20px;font-weight:600;letter-spacing:.2px;margin:0}
+  .brand span{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
+  .controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+
+  .field{position:relative;display:inline-flex;align-items:center}
+  .field label{position:absolute;left:11px;top:-8px;font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);background:var(--bg);padding:0 4px}
+  select{
+    appearance:none;font-size:13px;color:var(--ink);background:var(--surface);
+    border:1px solid var(--line-strong);border-radius:10px;padding:8px 30px 8px 12px;cursor:pointer;transition:border-color .15s;
+  }
+  select:hover{border-color:var(--accent)}
+  .field::after{content:"";position:absolute;right:12px;top:50%;width:7px;height:7px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:translateY(-65%) rotate(45deg);pointer-events:none}
+
+  .btn{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:500;color:var(--ink);background:var(--surface);border:1px solid var(--line-strong);border-radius:10px;padding:8px 13px;cursor:pointer;transition:border-color .15s,background .15s,transform .05s}
+  .btn:hover{border-color:var(--accent)}
+  .btn:active{transform:translateY(1px)}
+  .btn svg{width:15px;height:15px;stroke-width:1.9}
+  .btn.icon{padding:8px;width:38px;justify-content:center}
+  .btn.danger{color:var(--record);border-color:var(--record-soft)}
+  .btn.danger:hover{border-color:var(--record);background:var(--record-soft)}
+
+  .banner{display:none;align-items:flex-start;gap:10px;margin:10px clamp(14px,4vw,28px) 0;padding:11px 14px;border-radius:11px;font-size:13px;line-height:1.5;border:1px solid var(--line-strong);background:var(--surface-2);color:var(--muted)}
+  .banner.show{display:flex}
+  .banner b{color:var(--ink);font-weight:600}
+  .banner svg{width:17px;height:17px;flex:0 0 auto;margin-top:1px;color:var(--accent)}
+  .banner.warn svg{color:var(--record)}
+
+  main{flex:1;overflow-y:auto;display:flex;justify-content:center;padding:clamp(20px,5vh,54px) 20px 200px}
+  .paper{width:100%;max-width:68ch;display:flex}
+  #editor{width:100%;min-height:50vh;resize:none;border:0;outline:0;background:transparent;color:var(--ink);font-family:var(--serif);font-size:clamp(19px,2.4vw,22px);line-height:1.62;letter-spacing:.1px}
+  #editor::placeholder{color:var(--faint);font-style:italic}
+
+  .dock{position:fixed;left:0;right:0;bottom:0;z-index:15;display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px 20px calc(20px + env(safe-area-inset-bottom));background:linear-gradient(to top,var(--bg) 58%, transparent);pointer-events:none}
+  .dock > *{pointer-events:auto}
+  .interim{max-width:min(68ch,90vw);min-height:22px;text-align:center;font-family:var(--serif);font-style:italic;font-size:16px;color:var(--faint);transition:opacity .2s}
+  .meter{width:min(320px,80vw);height:40px;opacity:0;transition:opacity .25s}
+  .is-recording .meter{opacity:1}
+
+  .rec-wrap{display:flex;align-items:center;gap:16px}
+  .meta{display:flex;flex-direction:column;gap:3px;min-width:96px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--muted);font-variant-numeric:tabular-nums}
+  .meta.right{text-align:left}
+  .meta .status{display:flex;align-items:center;gap:6px;text-transform:uppercase;letter-spacing:.12em}
+  .meta .status .s-dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:0 0 auto}
+  .is-recording .meta .status .s-dot{background:var(--record);animation:blink 1.1s infinite}
+  @keyframes blink{50%{opacity:.25}}
+
+  .mic{position:relative;width:74px;height:74px;border-radius:50%;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);cursor:pointer;display:grid;place-items:center;box-shadow:var(--shadow);transition:transform .12s,background .18s,color .18s,border-color .18s}
+  .mic:hover{border-color:var(--record)}
+  .mic:active{transform:scale(.96)}
+  .mic svg{width:28px;height:28px}
+  .mic .ring{position:absolute;inset:-6px;border-radius:50%;border:2px solid var(--record);opacity:0;pointer-events:none}
+  .is-recording .mic{background:var(--record);border-color:var(--record);color:#fff}
+  .is-recording .mic .ring{animation:pulse 1.6s ease-out infinite}
+  @keyframes pulse{0%{opacity:.5;transform:scale(1)}100%{opacity:0;transform:scale(1.5)}}
+  .mic:disabled{opacity:.4;cursor:not-allowed}
+
+  .scrim{position:fixed;inset:0;background:rgba(10,15,18,.42);z-index:40;opacity:0;visibility:hidden;transition:.2s}
+  .scrim.open{opacity:1;visibility:visible}
+  .drawer{position:fixed;top:0;right:0;bottom:0;width:min(420px,92vw);z-index:50;background:var(--surface);border-left:1px solid var(--line);box-shadow:var(--shadow);transform:translateX(100%);transition:transform .24s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column}
+  .drawer.open{transform:none}
+  .drawer header{position:static;background:none;backdrop-filter:none;border-bottom:1px solid var(--line);justify-content:space-between}
+  .drawer h2{font-family:var(--serif);font-size:18px;margin:0;font-weight:600}
+  .drawer .body{overflow-y:auto;padding:20px clamp(16px,4vw,22px);display:flex;flex-direction:column;gap:26px}
+  .sect{display:flex;flex-direction:column;gap:12px}
+  .sect > .h{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);display:flex;align-items:center;gap:8px}
+  .sect > .h::after{content:"";flex:1;height:1px;background:var(--line)}
+  .sect p.hint{margin:0;font-size:12.5px;line-height:1.55;color:var(--muted)}
+
+  .toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;font-size:13.5px;color:var(--ink)}
+  .toggle .lbl em{font-style:normal;color:var(--faint);font-size:11.5px;display:block;margin-top:1px}
+  .toggle input{position:absolute;opacity:0;width:0;height:0}
+  .switch{width:40px;height:23px;border-radius:999px;background:var(--line-strong);position:relative;transition:background .18s;flex:0 0 auto}
+  .switch::after{content:"";position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;background:#fff;transition:transform .18s;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+  .toggle input:checked + .switch{background:var(--accent)}
+  .toggle input:checked + .switch::after{transform:translateX(17px)}
+  .toggle input:focus-visible + .switch{outline:2px solid var(--accent);outline-offset:2px}
+
+  .corr-row{display:flex;align-items:center;gap:8px}
+  .corr-row input{flex:1;min-width:0}
+  textarea.box,input.box{width:100%;font-size:13.5px;color:var(--ink);background:var(--surface-2);border:1px solid var(--line-strong);border-radius:10px;padding:10px 12px}
+  input.box:focus,textarea.box:focus{outline:none;border-color:var(--accent)}
+  .corr-row .arrow{color:var(--faint);font-family:var(--mono);font-size:13px}
+  .corr-list{display:flex;flex-direction:column;gap:7px}
+  .chip{display:flex;align-items:center;gap:8px;justify-content:space-between;background:var(--surface-2);border:1px solid var(--line);border-radius:9px;padding:7px 8px 7px 12px;font-size:13px}
+  .chip .pair{display:flex;align-items:center;gap:8px;min-width:0}
+  .chip .pair .to{color:var(--accent-ink)}
+  .chip .x{border:0;background:none;color:var(--faint);cursor:pointer;font-size:16px;line-height:1;padding:2px 6px;border-radius:6px}
+  .chip .x:hover{color:var(--record);background:var(--record-soft)}
+
+  .toast{position:fixed;left:50%;bottom:150px;transform:translate(-50%,14px);background:var(--ink);color:var(--bg);font-size:13px;font-weight:500;padding:9px 16px;border-radius:999px;box-shadow:var(--shadow);opacity:0;visibility:hidden;transition:.22s;z-index:60}
+  .toast.show{opacity:1;visibility:visible;transform:translate(-50%,0)}
+
+  @media (max-width:560px){.brand span{display:none}.controls .label-text{display:none}}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="dot" aria-hidden="true"></span>
+    <h1>Murmur</h1>
+    <span>voice notepad</span>
+  </div>
+  <div class="controls">
+    <div class="field">
+      <label for="mode">Mode</label>
+      <select id="mode" title="How your dictation is tidied">
+        <option value="clean">Clean up</option>
+        <option value="bullets">Bullet points</option>
+        <option value="verbatim">Verbatim</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="locale">Accent</label>
+      <select id="locale" title="Speech-recognition accent/locale">
+        <option value="en-US">English · US</option>
+        <option value="en-GB">English · UK</option>
+        <option value="en-IE">English · Ireland</option>
+        <option value="en-AU">English · Australia</option>
+        <option value="en-CA">English · Canada</option>
+        <option value="en-IN">English · India</option>
+        <option value="en-NZ">English · New Zealand</option>
+        <option value="en-ZA">English · South Africa</option>
+      </select>
+    </div>
+    <button class="btn" id="copyBtn" title="Copy all text">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg>
+      <span class="label-text">Copy</span>
+    </button>
+    <button class="btn icon" id="gearBtn" title="Settings" aria-label="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </div>
+</header>
+
+<div class="banner" id="browserBanner">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+  <div><b>Voice input needs Chrome or Edge.</b> This browser doesn't support in-page speech recognition — you can still type, edit, and use Copy.</div>
+</div>
+<div class="banner warn" id="noticeBanner">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+  <div id="noticeText"></div>
+</div>
+
+<main>
+  <div class="paper">
+    <textarea id="editor" spellcheck="true" placeholder="Press the mic and start talking. Your words land here, tidied up as you go — then hit Copy and paste them anywhere."></textarea>
+  </div>
+</main>
+
+<div class="dock" id="dock">
+  <div class="interim" id="interim"></div>
+  <canvas class="meter" id="meter" width="640" height="80" aria-hidden="true"></canvas>
+  <div class="rec-wrap">
+    <div class="meta">
+      <div class="status"><span class="s-dot"></span><span id="statusText">Ready</span></div>
+      <div id="timer">00:00</div>
+    </div>
+    <button class="mic" id="mic" aria-pressed="false" aria-label="Start dictation">
+      <span class="ring" aria-hidden="true"></span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+    </button>
+    <div class="meta right">
+      <div id="wordCount">0 words</div>
+      <div id="hint">press to talk</div>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-hidden="true" aria-label="Settings">
+  <header>
+    <h2>Settings</h2>
+    <button class="btn icon" id="closeDrawer" aria-label="Close settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </header>
+  <div class="body">
+    <div class="sect">
+      <div class="h">Cleanup options</div>
+      <label class="toggle"><span class="lbl">Remove filler words<em>um, uh, er, hmm…</em></span><input type="checkbox" id="tgFillers"><span class="switch"></span></label>
+      <label class="toggle"><span class="lbl">Smart capitalization<em>capitalize sentences and “I”</em></span><input type="checkbox" id="tgCaps"><span class="switch"></span></label>
+      <label class="toggle"><span class="lbl">Spoken punctuation<em>say “period”, “comma”, “new line”</em></span><input type="checkbox" id="tgPunct"><span class="switch"></span></label>
+      <p class="hint"><b>Verbatim</b> mode ignores these and keeps your words exactly as heard (it still applies your corrections below).</p>
+    </div>
+
+    <div class="sect">
+      <div class="h">Corrections it learns</div>
+      <p class="hint">When it keeps mishearing a name or term, add the fix here. It's applied to every dictation from now on — so it gets more accurate for your words the more you use it.</p>
+      <div class="corr-row">
+        <input class="box" id="corrFrom" placeholder="it hears…">
+        <span class="arrow">→</span>
+        <input class="box" id="corrTo" placeholder="you mean…">
+        <button class="btn" id="addCorr">Add</button>
+      </div>
+      <div class="corr-list" id="corrList"></div>
+    </div>
+
+    <div class="sect">
+      <div class="h">Notepad</div>
+      <button class="btn danger" id="clearBtn">Clear all text</button>
+      <p class="hint">Runs entirely in your browser — no account, no API key, nothing sent to us. To turn speech into text, Chrome's built-in voice recognition sends the audio to Google's servers (that's how the browser's dictation works). Your text, corrections, and settings stay only in this browser.</p>
+    </div>
+  </div>
+</aside>
+
+<div class="toast" id="toast">Copied</div>
+
+<script>
+(function(){
+  "use strict";
+  var $ = function(id){ return document.getElementById(id); };
+  var editor=$("editor"), interim=$("interim"), mic=$("mic"),
+      statusText=$("statusText"), timerEl=$("timer"), wordCount=$("wordCount"),
+      modeSel=$("mode"), localeSel=$("locale"), dock=$("dock"), toast=$("toast"), meter=$("meter");
+
+  var LS="murmur.local.v1";
+  var state={ text:"", mode:"clean", locale:"en-US", corrections:[],
+              removeFillers:true, smartCaps:true, spokenPunct:false };
+
+  /* ---------- persistence ---------- */
+  function load(){
+    try{ var raw=localStorage.getItem(LS); if(raw){ var d=JSON.parse(raw); if(d&&typeof d==="object") Object.assign(state,d); } }catch(e){}
+    editor.value=state.text||"";
+    modeSel.value=state.mode; localeSel.value=state.locale;
+    $("tgFillers").checked=!!state.removeFillers;
+    $("tgCaps").checked=!!state.smartCaps;
+    $("tgPunct").checked=!!state.spokenPunct;
+    renderCorrections(); updateWordCount();
+  }
+  var saveTimer=null;
+  function save(now){
+    state.text=editor.value; state.mode=modeSel.value; state.locale=localeSel.value;
+    state.removeFillers=$("tgFillers").checked; state.smartCaps=$("tgCaps").checked; state.spokenPunct=$("tgPunct").checked;
+    clearTimeout(saveTimer);
+    var write=function(){ try{ localStorage.setItem(LS,JSON.stringify(state)); }catch(e){} };
+    if(now) write(); else saveTimer=setTimeout(write,400);
+  }
+  function updateWordCount(){
+    var w=editor.value.trim()? editor.value.trim().split(/\s+/).length : 0;
+    wordCount.textContent = w + (w===1?" word":" words");
+  }
+
+  /* ---------- local cleanup engine (no network, no AI) ---------- */
+  var FILLERS=["um","umm","uh","uhh","uhm","er","erm","hmm","mmm"];
+  function escapeRe(s){ return s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"); }
+  function applyCorrections(t){
+    state.corrections.forEach(function(c){
+      if(!c.from) return;
+      try{ t=t.replace(new RegExp("\\b"+escapeRe(c.from)+"\\b","gi"), c.to); }catch(e){}
+    });
+    return t;
+  }
+  function stripFillers(t){
+    FILLERS.forEach(function(f){ t=t.replace(new RegExp("\\b"+f+"\\b,?","gi"),""); });
+    return t.replace(/\s{2,}/g," ").trim();
+  }
+  var PUNCT=[
+    [/\s*\b(full stop|period)\b/gi,"."], [/\s*\bcomma\b/gi,","],
+    [/\s*\bquestion mark\b/gi,"?"], [/\s*\bexclamation (mark|point)\b/gi,"!"],
+    [/\s*\bsemicolon\b/gi,";"], [/\s*\bcolon\b/gi,":"],
+    [/\s*\b(new paragraph)\b/gi,"\n\n"], [/\s*\b(new line|newline)\b/gi,"\n"]
+  ];
+  function applySpokenPunct(t){ PUNCT.forEach(function(p){ t=t.replace(p[0],p[1]); }); return t; }
+  function capitalize(t){
+    t=t.replace(/^(\s*)([a-z])/,function(m,a,b){return a+b.toUpperCase();});
+    t=t.replace(/([.!?]\s+)([a-z])/g,function(m,a,b){return a+b.toUpperCase();});
+    t=t.replace(/([.!?]\n+)([a-z])/g,function(m,a,b){return a+b.toUpperCase();});
+    t=t.replace(/\bi\b/g,"I");
+    return t;
+  }
+  function tidy(raw){
+    var t=(raw||"").trim(); if(!t) return "";
+    var mode=modeSel.value;
+    t=applyCorrections(t);
+    if(mode!=="verbatim"){
+      if(state.spokenPunct) t=applySpokenPunct(t);
+      if(state.removeFillers) t=stripFillers(t);
+    }
+    t=t.replace(/[ \t]{2,}/g," ").replace(/[ \t]+([,.;:!?])/g,"$1");
+    if(mode!=="verbatim" && state.smartCaps) t=capitalize(t);
+    t=t.trim();
+    if(mode==="bullets"){
+      var parts;
+      try{ parts=t.split(/(?<=[.!?])\s+/); }catch(e){ parts=t.split(/([.!?])\s+/); }
+      parts=parts.map(function(s){return s.trim();}).filter(Boolean);
+      t=parts.map(function(s){ return "- "+s; }).join("\n");
+    }
+    return t;
+  }
+
+  /* ---------- append + flush ---------- */
+  function appendToEditor(text){
+    text=(text||"").trim(); if(!text) return;
+    var cur=editor.value, sep="";
+    if(cur.length){
+      if(modeSel.value==="bullets") sep = /\n$/.test(cur)?"":"\n";
+      else sep = /\s$/.test(cur)?"":" ";
+    }
+    editor.value=cur+sep+text;
+    editor.scrollTop=editor.scrollHeight;
+    updateWordCount(); save();
+  }
+  var pendingRaw="", flushTimer=null;
+  function queueRaw(t){ t=(t||"").trim(); if(!t) return; pendingRaw+=(pendingRaw?" ":"")+t; scheduleFlush(350); }
+  function scheduleFlush(ms){ clearTimeout(flushTimer); flushTimer=setTimeout(flush, ms||350); }
+  function flush(){ var raw=pendingRaw.trim(); if(!raw) return; pendingRaw=""; appendToEditor(tidy(raw)); }
+
+  /* ---------- status / timer ---------- */
+  function setStatus(rec){
+    dock.classList.toggle("is-recording", !!rec);
+    statusText.textContent = rec ? "Listening" : "Ready";
+  }
+  var timerInt=null, startedAt=0;
+  function startTimer(){ startedAt=Date.now(); timerInt=setInterval(function(){
+    var s=Math.floor((Date.now()-startedAt)/1000);
+    timerEl.textContent=String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");
+  },250); }
+  function stopTimer(){ clearInterval(timerInt); }
+
+  /* ---------- speech recognition ---------- */
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var rec=null, listening=false;
+  function buildRec(){
+    var r=new SR();
+    r.continuous=true; r.interimResults=true; r.lang=localeSel.value;
+    r.onresult=function(e){
+      hideNotice();
+      var iv="";
+      for(var i=e.resultIndex;i<e.results.length;i++){
+        var res=e.results[i];
+        if(res.isFinal) queueRaw(res[0].transcript);
+        else iv+=res[0].transcript;
+      }
+      interim.textContent=iv.trim();
+    };
+    r.onerror=function(e){
+      switch(e.error){
+        case "not-allowed": case "service-not-allowed":
+          showNotice("Microphone permission is blocked. Click the camera/lock icon in your browser's address bar, allow the microphone, then press the mic again.");
+          stopListening(); break;
+        case "network":
+          showNotice("Your browser blocked the speech engine because this page isn't on a secure address. Open it through the included serve.bat (http://localhost:8000/murmur.html) or any https link — not as a file:// page.");
+          stopListening(); break;
+        case "audio-capture":
+          showNotice("No microphone was found. Check that your mic is connected and not in use by another app.");
+          stopListening(); break;
+      }
+    };
+    r.onend=function(){ if(listening){ try{ r.start(); }catch(e){} } };
+    return r;
+  }
+  function startListening(){
+    if(!SR) return;
+    listening=true; mic.setAttribute("aria-pressed","true"); mic.setAttribute("aria-label","Stop dictation");
+    setStatus(true); startTimer(); startMeter();
+    rec=buildRec();
+    try{ rec.start(); }catch(e){}
+  }
+  function stopListening(){
+    listening=false; mic.setAttribute("aria-pressed","false"); mic.setAttribute("aria-label","Start dictation");
+    if(rec){ try{ rec.stop(); }catch(e){} }
+    stopTimer(); stopMeter(); interim.textContent=""; setStatus(false);
+    scheduleFlush(120);
+  }
+  mic.addEventListener("click",function(){ listening?stopListening():startListening(); });
+
+  /* ---------- live level meter ---------- */
+  var audioCtx=null, analyser=null, micStream=null, rafId=null, reduced=false;
+  try{ reduced=window.matchMedia("(prefers-reduced-motion:reduce)").matches; }catch(e){}
+  function startMeter(){
+    if(reduced || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+    navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
+      micStream=stream;
+      var AC=window.AudioContext||window.webkitAudioContext; if(!AC) return;
+      audioCtx=new AC();
+      var src=audioCtx.createMediaStreamSource(stream);
+      analyser=audioCtx.createAnalyser(); analyser.fftSize=128; analyser.smoothingTimeConstant=.75;
+      src.connect(analyser); drawMeter();
+    }).catch(function(){});
+  }
+  function drawMeter(){
+    var ctx=meter.getContext("2d");
+    var dpr=Math.min(window.devicePixelRatio||1,2);
+    var W=meter.clientWidth||320, H=meter.clientHeight||40;
+    meter.width=W*dpr; meter.height=H*dpr; ctx.scale(dpr,dpr);
+    var bins=24, data=new Uint8Array(analyser.frequencyBinCount);
+    var col=getComputedStyle(document.documentElement).getPropertyValue("--record").trim()||"#D8503C";
+    (function frame(){
+      if(!analyser) return;
+      analyser.getByteFrequencyData(data);
+      ctx.clearRect(0,0,W,H);
+      var bw=W/bins, mid=H/2;
+      for(var i=0;i<bins;i++){
+        var v=data[Math.floor(i*data.length/bins)]/255;
+        var h=Math.max(2, v*H*0.92);
+        ctx.fillStyle=col; ctx.globalAlpha=0.35+v*0.65;
+        roundRect(ctx, i*bw+bw*0.2, mid-h/2, bw*0.6, h, bw*0.3);
+      }
+      ctx.globalAlpha=1; rafId=requestAnimationFrame(frame);
+    })();
+  }
+  function roundRect(ctx,x,y,w,h,r){
+    r=Math.min(r,h/2); ctx.beginPath();
+    ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); ctx.fill();
+  }
+  function stopMeter(){
+    if(rafId) cancelAnimationFrame(rafId); rafId=null;
+    if(micStream){ micStream.getTracks().forEach(function(t){t.stop();}); micStream=null; }
+    if(audioCtx){ try{audioCtx.close();}catch(e){} audioCtx=null; }
+    analyser=null;
+    var ctx=meter.getContext("2d"); ctx.clearRect(0,0,meter.width,meter.height);
+  }
+
+  /* ---------- notice banner ---------- */
+  function showNotice(msg){ $("noticeText").textContent=msg; $("noticeBanner").classList.add("show"); }
+  function hideNotice(){ $("noticeBanner").classList.remove("show"); }
+
+  /* ---------- corrections ui ---------- */
+  function renderCorrections(){
+    var list=$("corrList"); list.innerHTML="";
+    state.corrections.forEach(function(c,idx){
+      var row=document.createElement("div"); row.className="chip";
+      var pair=document.createElement("div"); pair.className="pair";
+      var b=document.createElement("b"); b.textContent=c.from;
+      var ar=document.createElement("span"); ar.className="arrow"; ar.textContent=" → ";
+      var to=document.createElement("span"); to.className="to"; to.textContent=c.to;
+      pair.appendChild(b); pair.appendChild(ar); pair.appendChild(to);
+      var x=document.createElement("button"); x.className="x"; x.setAttribute("aria-label","Remove correction"); x.textContent="×";
+      x.onclick=function(){ state.corrections.splice(idx,1); renderCorrections(); save(true); };
+      row.appendChild(pair); row.appendChild(x); list.appendChild(row);
+    });
+  }
+  $("addCorr").addEventListener("click",function(){
+    var f=$("corrFrom").value.trim(), t=$("corrTo").value.trim();
+    if(!f||!t) return;
+    state.corrections.push({from:f,to:t});
+    $("corrFrom").value=""; $("corrTo").value=""; $("corrFrom").focus();
+    renderCorrections(); save(true);
+  });
+
+  /* ---------- drawer ---------- */
+  function openDrawer(){ $("drawer").classList.add("open"); $("scrim").classList.add("open"); $("drawer").setAttribute("aria-hidden","false"); $("closeDrawer").focus(); }
+  function closeDrawer(){ $("drawer").classList.remove("open"); $("scrim").classList.remove("open"); $("drawer").setAttribute("aria-hidden","true"); }
+  $("gearBtn").addEventListener("click",openDrawer);
+  $("closeDrawer").addEventListener("click",closeDrawer);
+  $("scrim").addEventListener("click",closeDrawer);
+  document.addEventListener("keydown",function(e){ if(e.key==="Escape") closeDrawer(); });
+
+  /* ---------- copy / clear / toast ---------- */
+  var toastTimer=null;
+  function showToast(msg){ toast.textContent=msg||"Copied"; toast.classList.add("show"); clearTimeout(toastTimer); toastTimer=setTimeout(function(){toast.classList.remove("show");},1600); }
+  $("copyBtn").addEventListener("click",function(){
+    var t=editor.value;
+    if(!t.trim()){ showToast("Nothing to copy yet"); return; }
+    var done=function(){ showToast("Copied to clipboard"); };
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(done).catch(fallbackCopy); }
+    else fallbackCopy();
+    function fallbackCopy(){ editor.select(); try{ document.execCommand("copy"); done(); }catch(e){ showToast("Press Ctrl+C to copy"); } editor.setSelectionRange(t.length,t.length); }
+  });
+  var clearArmed=false, clearArmTimer=null;
+  $("clearBtn").addEventListener("click",function(){
+    var b=this;
+    if(!editor.value.trim()){ closeDrawer(); return; }
+    if(!clearArmed){ clearArmed=true; b.textContent="Click again to clear"; clearArmTimer=setTimeout(function(){ clearArmed=false; b.textContent="Clear all text"; },3000); return; }
+    clearTimeout(clearArmTimer); clearArmed=false; b.textContent="Clear all text";
+    editor.value=""; updateWordCount(); save(true); closeDrawer(); editor.focus();
+  });
+
+  /* ---------- wiring ---------- */
+  editor.addEventListener("input",function(){ updateWordCount(); save(); });
+  modeSel.addEventListener("change",function(){ save(true); });
+  localeSel.addEventListener("change",function(){ save(true); if(rec) rec.lang=localeSel.value; });
+  ["tgFillers","tgCaps","tgPunct"].forEach(function(id){ $(id).addEventListener("change",function(){ save(true); }); });
+
+  /* ---------- init ---------- */
+  load();
+  if(!SR){ $("browserBanner").classList.add("show"); mic.disabled=true; $("hint").textContent="type below"; }
+  else if(location.protocol==="file:"){
+    showNotice("Tip: for the microphone to work, open this through the included serve.bat (http://localhost:8000/murmur.html). Some browsers block voice on file:// pages.");
+  }
+})();
+</script>
+</body>
+</html>
