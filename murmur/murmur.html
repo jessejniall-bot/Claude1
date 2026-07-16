@@ -179,6 +179,10 @@
         <option value="en-ZA">English · South Africa</option>
       </select>
     </div>
+    <button class="btn" id="tidyBtn" title="Tidy up the text now (useful if you dictated with your phone/keyboard mic)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3l1.5 4.2L18 9l-4.5 1.8L12 15l-1.5-4.2L6 9z"/><path d="M18.5 14l.9 2.4 2.4.9-2.4.9-.9 2.4-.9-2.4-2.4-.9 2.4-.9z"/></svg>
+      <span class="label-text">Tidy</span>
+    </button>
     <button class="btn" id="copyBtn" title="Copy all text">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg>
       <span class="label-text">Copy</span>
@@ -408,10 +412,35 @@
   }
   function startListening(){
     if(!SR) return;
+    // Explicitly request the mic so the browser reliably shows its permission
+    // prompt — the same flow works on desktop and phone. Then start recognition.
+    if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
+      navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
+        micStream=stream; hideNotice(); beginRecognition();
+      }).catch(showMicError);
+    } else if(!window.isSecureContext){
+      showNotice("The microphone needs a secure address (https, or http://localhost). This page isn't on one — host it over https, or run serve.bat on a computer.");
+    } else {
+      beginRecognition();
+    }
+  }
+  function beginRecognition(){
     listening=true; mic.setAttribute("aria-pressed","true"); mic.setAttribute("aria-label","Stop dictation");
     setStatus(true); startTimer(); startMeter();
     rec=buildRec();
     try{ rec.start(); }catch(e){}
+  }
+  function showMicError(err){
+    var name=(err&&err.name)||"";
+    if(name==="NotAllowedError"||name==="SecurityError"){
+      showNotice(window.isSecureContext
+        ? "Microphone access was blocked. Tap the lock/camera icon in your browser's address bar, allow the microphone, then press the mic again."
+        : "The microphone needs a secure address (https, or http://localhost). Host this over https, or run serve.bat on a computer.");
+    } else if(name==="NotFoundError"||name==="DevicesNotFoundError"){
+      showNotice("No microphone was found. Check that a mic is connected and enabled.");
+    } else {
+      showNotice("Couldn't start the microphone"+(name?" ("+name+")":"")+". Make sure no other app is using it, then try again.");
+    }
   }
   function stopListening(){
     listening=false; mic.setAttribute("aria-pressed","false"); mic.setAttribute("aria-label","Start dictation");
@@ -425,15 +454,14 @@
   var audioCtx=null, analyser=null, micStream=null, rafId=null, reduced=false;
   try{ reduced=window.matchMedia("(prefers-reduced-motion:reduce)").matches; }catch(e){}
   function startMeter(){
-    if(reduced || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
-    navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
-      micStream=stream;
-      var AC=window.AudioContext||window.webkitAudioContext; if(!AC) return;
+    if(reduced || !micStream) return;
+    var AC=window.AudioContext||window.webkitAudioContext; if(!AC) return;
+    try{
       audioCtx=new AC();
-      var src=audioCtx.createMediaStreamSource(stream);
+      var src=audioCtx.createMediaStreamSource(micStream);
       analyser=audioCtx.createAnalyser(); analyser.fftSize=128; analyser.smoothingTimeConstant=.75;
       src.connect(analyser); drawMeter();
-    }).catch(function(){});
+    }catch(e){}
   }
   function drawMeter(){
     var ctx=meter.getContext("2d");
@@ -507,6 +535,11 @@
   /* ---------- copy / clear / toast ---------- */
   var toastTimer=null;
   function showToast(msg){ toast.textContent=msg||"Copied"; toast.classList.add("show"); clearTimeout(toastTimer); toastTimer=setTimeout(function(){toast.classList.remove("show");},1600); }
+  $("tidyBtn").addEventListener("click",function(){
+    var t=editor.value;
+    if(!t.trim()){ showToast("Nothing to tidy yet"); return; }
+    editor.value=tidy(t); updateWordCount(); save(true); showToast("Tidied up");
+  });
   $("copyBtn").addEventListener("click",function(){
     var t=editor.value;
     if(!t.trim()){ showToast("Nothing to copy yet"); return; }
@@ -533,8 +566,8 @@
   /* ---------- init ---------- */
   load();
   if(!SR){ $("browserBanner").classList.add("show"); mic.disabled=true; $("hint").textContent="type below"; }
-  else if(location.protocol==="file:"){
-    showNotice("Tip: for the microphone to work, open this through the included serve.bat (http://localhost:8000/murmur.html). Some browsers block voice on file:// pages.");
+  else if(location.protocol==="file:" || !window.isSecureContext){
+    showNotice("For the microphone to work, this page must be on a secure address: open it over http://localhost (double-click serve.bat) or an https link — not straight from a file. Otherwise the browser won't even ask for mic permission.");
   }
 })();
 </script>
